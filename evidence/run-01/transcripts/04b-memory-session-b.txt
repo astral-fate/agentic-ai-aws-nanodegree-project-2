@@ -2,7 +2,7 @@
 Test 4b — Long-Term Memory, session B (recall)
 Capability under test : AgentCore Memory
 Mode                  : offline harness (no AWS account)
-Timestamp             : 2026-09-16T09:48:54+00:00
+Timestamp             : 2026-09-16T10:33:58+00:00
 ====================================================================================
 
 $ agentcore invoke '{"prompt": "Do you remember my name and communication preference?", "customer_id": "CUST-123", "session_id": "s-B"}'

@@ -2,7 +2,7 @@
 Test 6 — Browser Tool
 Capability under test : AgentCore Browser
 Mode                  : offline harness (no AWS account)
-Timestamp             : 2026-09-16T09:48:55+00:00
+Timestamp             : 2026-09-16T10:33:59+00:00
 ====================================================================================
 
 $ agentcore invoke '{"prompt": "Go to https://www.udacity.com and tell me the page title.", "customer_id": "CUST-123", "session_id": "t6"}'

@@ -5,7 +5,7 @@ account and no credentials. Every scenario prompt is verbatim from the
 project instructions, and every reply is checked against that scenario's own
 "Expected:" line.
 
-**7/7 scenarios passed · 87/87 offline tests passed**
+**7/7 scenarios passed · 99/99 offline tests passed**
 
 | # | Scenario | Capability | What the transcript shows |
 |---|---|---|---|

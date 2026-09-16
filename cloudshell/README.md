@@ -18,9 +18,25 @@ bash cloudshell/run-all.sh --teardown   # delete what the script created
 
 Deterministically, without asking:
 
-1. **Preflight** — identity, region, and whether Nova 2 Lite is actually
-   visible. The model-access check is first on purpose: without the grant
-   everything downstream fails in confusing ways, and it is a two-click fix.
+1. **Preflight** — identity, region, whether Nova 2 Lite is actually visible,
+   and whether this identity can deploy at all. Both checks are first on
+   purpose. A missing model grant makes everything downstream fail in
+   confusing ways and is a two-click fix; and an identity scoped to a
+   different project otherwise dies at *"could not create the role"*, which
+   reads like a name clash rather than a permissions problem. The permission
+   probe is read-only and reports **every** missing service at once, before
+   the first write:
+
+   ```
+   [fail] This identity cannot deploy the project. Missing:
+
+       lambda:ListFunctions / CreateFunction — both Lambda targets
+       apigateway:GET / POST                 — the order-tracker REST API
+       s3:ListAllMyBuckets / CreateBucket    — the Knowledge Base source
+       bedrock-agentcore:*Memor*             — AgentCore Memory
+
+   Nothing has been created — this check runs before the first write.
+   ```
 2. **IAM** — a Lambda execution role with `AWSLambdaBasicExecutionRole`, then
    a deliberate 30-second pause. IAM is eventually consistent and Lambda
    rejects a role it cannot see yet; the pause is cheaper than the retry loop.

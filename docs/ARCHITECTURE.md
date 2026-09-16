@@ -139,8 +139,10 @@ scripts/
   run_scenarios.py         ★ runs the six project tests, writes transcripts
   render_screenshots.py      typesets transcripts as PNGs
 
-tests/                     ★ 87 offline tests, no AWS required
-cloudshell/run-all.sh        deploys the AWS infrastructure
+tests/                     ★ 99 offline tests, no AWS required
+cloudshell/
+  deploy-e2e.sh              ★ self-contained: deploy + test, one command
+  run-all.sh                   infrastructure only, console for KB + Gateway
 evidence/run-01/             transcripts, screenshots, traces
 ```
 

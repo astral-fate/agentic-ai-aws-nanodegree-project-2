@@ -20,7 +20,7 @@ run-NN/
 
 | Run | Mode | Result | Notes |
 |---|---|---|---|
-| [`run-01`](run-01/) | offline harness | 7/7 scenarios, 87/87 tests | Lambda handlers and discount arithmetic really execute; tool routing is rule-based |
+| [`run-01`](run-01/) | offline harness | 7/7 scenarios, 99/99 tests | Lambda handlers and discount arithmetic really execute; tool routing is rule-based |
 
 A live run against deployed AWS infrastructure drops into `run-02/` with the
 same layout, so the two can be diffed directly. The procedure is

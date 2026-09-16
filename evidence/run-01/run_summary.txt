@@ -12,7 +12,7 @@ Test 4b — Long-Term Memory, session B (recall) AgentCore Memory             [P
 Test 5 — Loyalty Discount Calculation          AgentCore Code Interpreter   [PASS]
 Test 6 — Browser Tool                          AgentCore Browser            [PASS]
 
-7/7 scenarios passed  ·  2026-09-16T09:48:55+00:00
+7/7 scenarios passed  ·  2026-09-16T10:33:59+00:00
 
 Mode: offline harness. Gateway tools run the real Lambda handler
 code and the discount is computed by really executing the

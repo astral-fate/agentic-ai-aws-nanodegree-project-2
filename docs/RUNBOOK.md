@@ -15,7 +15,7 @@ python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements-dev.txt
 
-python -m pytest                  # 87 tests
+python -m pytest                  # 99 tests
 python -m scripts.run_scenarios   # the six project scenarios
 python -m scripts.render_screenshots
 ```
@@ -42,9 +42,35 @@ Bedrock console → **Model access** → enable **Amazon Nova Lite**
 
 Everything else fails confusingly without this, so do it first.
 
-### 2. Infrastructure
+### 2a. The one-command path
 
-Open **AWS CloudShell** in `us-east-1`, clone the repo, and run:
+`cloudshell/deploy-e2e.sh` is self-contained — `main.py`, both Lambda handlers,
+the tool schema and the catalog are all embedded in it. Open **AWS CloudShell**
+in `us-east-1` and paste:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/astral-fate/agentic-ai-aws-nanodegree-project-2/main/cloudshell/deploy-e2e.sh -o deploy-e2e.sh && bash deploy-e2e.sh
+```
+
+It does everything in §2b–§5 below, including the OpenSearch collection, the
+vector index, the Knowledge Base sync, the Gateway targets, the agent deploy
+and all six tests. Transcripts land in `~/cs-agent-project/evidence/live/`.
+
+If it completes, skip to §6 (tear down). If a step fails it prints the console
+steps for that piece and carries on, and the summary table says what worked.
+
+```bash
+bash deploy-e2e.sh --status      # what exists
+bash deploy-e2e.sh --test-only   # re-run the six tests
+bash deploy-e2e.sh --teardown    # delete everything, OpenSearch first
+```
+
+State lives in `~/.cs-agent-state/`, so a dropped CloudShell session costs only
+time — re-run and it resumes.
+
+### 2b. Infrastructure only
+
+If you would rather create the Knowledge Base and Gateway in the console:
 
 ```bash
 bash cloudshell/run-all.sh

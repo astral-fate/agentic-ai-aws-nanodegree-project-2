@@ -108,6 +108,65 @@ preflight() {
     warn "Could not confirm Nova 2 Lite access."
     warn "Enable it: Bedrock console → Model access → Amazon Nova Lite."
   fi
+
+  check_permissions
+}
+
+# Fail on the whole list of missing permissions, not on the first one.
+#
+# Written after running this against an IAM user scoped to an unrelated
+# project: without it, the script dies at "could not create <role>", which
+# reads like a name clash rather than what it is. Each probe below is a
+# read-only call that requires the same permission as the write that follows
+# later, so a pass here means the deploy will get that far.
+check_permissions() {
+  local missing=()
+
+  aws iam list-roles --max-items 1 >/dev/null 2>&1 \
+    || missing+=("iam:ListRoles / iam:CreateRole      — the Lambda execution role")
+  aws lambda list-functions --max-items 1 --region "$REGION" >/dev/null 2>&1 \
+    || missing+=("lambda:ListFunctions / CreateFunction — both Lambda targets")
+  aws apigateway get-rest-apis --region "$REGION" >/dev/null 2>&1 \
+    || missing+=("apigateway:GET / POST                 — the order-tracker REST API")
+  aws s3api list-buckets --region "$REGION" >/dev/null 2>&1 \
+    || missing+=("s3:ListAllMyBuckets / CreateBucket    — the Knowledge Base source")
+  aws bedrock-agentcore-control list-memories --region "$REGION" >/dev/null 2>&1 \
+    || missing+=("bedrock-agentcore:*Memor*             — AgentCore Memory")
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    ok "all required permissions present"
+    return 0
+  fi
+
+  fail "This identity cannot deploy the project. Missing:"
+  printf '\n'
+  local entry
+  for entry in "${missing[@]}"; do
+    printf '      %s\n' "$entry"
+  done
+
+  cat <<EOF
+
+  Nothing has been created — this check runs before the first write.
+
+  The usual cause is credentials for a different project. Use the Udacity
+  Cloud Lab credentials (Cloud Resources tab → generate access keys), or an
+  IAM principal with IAM, Lambda, API Gateway, S3, Bedrock and
+  bedrock-agentcore permissions in $REGION.
+
+    export AWS_ACCESS_KEY_ID=...
+    export AWS_SECRET_ACCESS_KEY=...
+    export AWS_SESSION_TOKEN=...
+    export AWS_REGION=$REGION
+
+  In AWS CloudShell this is already configured and this check passes.
+
+  To work offline instead, with no AWS account at all:
+    python -m pytest
+    python -m scripts.run_scenarios
+
+EOF
+  exit 1
 }
 
 # ── IAM ──────────────────────────────────────────────────────────────────────

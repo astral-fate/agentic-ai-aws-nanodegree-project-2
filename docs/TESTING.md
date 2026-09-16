@@ -5,7 +5,7 @@ credentials and no network. That is worth being suspicious of, so this
 document says exactly where the boundary is.
 
 ```
-python -m pytest              # 87 tests
+python -m pytest              # 99 tests
 python -m scripts.run_scenarios   # the six project scenarios, with transcripts
 ```
 
