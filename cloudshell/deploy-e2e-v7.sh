@@ -63,7 +63,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v6"
+SCRIPT_VERSION="v7"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -1842,18 +1842,28 @@ ensure_kb() {
       "[[ \"\$(aws bedrock-agent get-ingestion-job --knowledge-base-id $kb_id --data-source-id $ds_id --ingestion-job-id $job --region $REGION --query 'ingestionJob.status' --output text 2>/dev/null)\" == COMPLETE ]]"
   fi
 
-  # The project's own Check 3.
-  local answer
-  answer="$(aws bedrock-agent-runtime retrieve --knowledge-base-id "$kb_id" \
-    --retrieval-query '{"text":"What is the return policy for electronics?"}' \
-    --region "$REGION" --query 'retrievalResults[0].content.text' --output text 2>/dev/null)"
-  if grep -q "15 days" <<<"$answer"; then
-    ok "retrieval check: electronics → 15 days"
-    record "Knowledge Base" "OK" "$kb_id"
-  else
-    warn "retrieval did not mention '15 days' yet — indexing can lag"
-    record "Knowledge Base" "PARTIAL" "$kb_id"
-  fi
+  # The project's own Check 3. Retried because a completed ingestion job does
+  # not mean the vectors are searchable yet — the first query after a sync
+  # routinely returns nothing for a minute or so.
+  local answer attempt
+  for attempt in 1 2 3 4 5 6; do
+    answer="$(aws bedrock-agent-runtime retrieve --knowledge-base-id "$kb_id" \
+      --retrieval-query '{"text":"What is the return policy for electronics?"}' \
+      --region "$REGION" --query 'retrievalResults[0].content.text' --output text 2>/dev/null)"
+    if grep -q "15 days" <<<"$answer"; then
+      ok "retrieval check: electronics → 15 days"
+      record "Knowledge Base" "OK" "$kb_id"
+      return 0
+    fi
+    [[ $attempt -lt 6 ]] && {
+      printf '   %s·%s retrieval empty, waiting 20s (%d/5)\n' "$DIM" "$RESET" "$attempt"
+      sleep 20
+    }
+  done
+
+  warn "retrieval still not returning the catalog — the agent will answer"
+  warn "policy questions without grounding until it does"
+  record "Knowledge Base" "PARTIAL" "$kb_id"
 }
 
 console_steps_kb() {
@@ -2150,6 +2160,55 @@ EOF
 # ═════════════════════════════════════════════════════════════════════════════
 #  10. Deploy the agent
 # ═════════════════════════════════════════════════════════════════════════════
+# Install the AgentCore starter toolkit and get its CLI onto PATH.
+#
+# The previous version piped pip to /dev/null and then reported "not on PATH",
+# which is the least useful of the several things that can go wrong here — a
+# pip resolution failure, a Python too old for the package, and a script
+# directory that is genuinely not on PATH all looked identical. Nothing is
+# silenced now, and the script directory is asked of Python rather than
+# assumed to be ~/.local/bin.
+install_agentcore_cli() {
+  local scripts_dir
+  scripts_dir="$(python3 -c \
+    "import sysconfig; print(sysconfig.get_path('scripts', scheme='posix_user'))" 2>/dev/null)"
+
+  [[ -n "$scripts_dir" ]] && export PATH="${scripts_dir}:$PATH"
+  export PATH="${HOME}/.local/bin:$PATH"
+  hash -r 2>/dev/null
+
+  if command -v agentcore >/dev/null 2>&1; then
+    ok "agentcore already installed: $(command -v agentcore)"
+    return 0
+  fi
+
+  printf '   %s⋯%s installing the AgentCore starter toolkit (a few minutes) ' "$DIM" "$RESET"
+  if python3 -m pip install --user --quiet \
+       bedrock-agentcore-starter-toolkit strands-agents strands-agents-tools \
+       bedrock-agentcore nest-asyncio >/tmp/pip.log 2>&1; then
+    printf '%s✓%s\n' "$GREEN" "$RESET"
+  else
+    printf '%s✗%s\n' "$RED" "$RESET"
+    bad "pip install failed:"
+    tail -20 /tmp/pip.log | sed 's/^/       /'
+    printf '       python3: %s — %s\n' "$(command -v python3)" "$(python3 -V 2>&1)"
+    return 1
+  fi
+
+  hash -r 2>/dev/null
+  if command -v agentcore >/dev/null 2>&1; then
+    ok "agentcore at $(command -v agentcore)"
+    return 0
+  fi
+
+  bad "the toolkit installed but its CLI is not on PATH"
+  printf '       python scripts dir : %s\n' "${scripts_dir:-unknown}"
+  printf '       python3            : %s — %s\n' "$(command -v python3)" "$(python3 -V 2>&1)"
+  printf '       candidates found   : %s\n' \
+    "$(find "$HOME" -maxdepth 4 -name 'agentcore' -type f 2>/dev/null | head -3 | tr '\n' ' ')"
+  return 1
+}
+
 deploy_agent() {
   phase "Deploying the agent to AgentCore Runtime"
 
@@ -2183,20 +2242,19 @@ bedrock-agentcore-starter-toolkit>=0.3.0
 nest-asyncio>=1.6.0
 EOF
 
-  if ! command -v agentcore >/dev/null 2>&1; then
-    printf '   %s⋯%s installing the AgentCore starter toolkit ' "$DIM" "$RESET"
-    pip install --quiet --user bedrock-agentcore-starter-toolkit strands-agents \
-      strands-agents-tools bedrock-agentcore nest-asyncio >/dev/null 2>&1
-    export PATH="$HOME/.local/bin:$PATH"
-    printf '%s✓%s\n' "$GREEN" "$RESET"
-  fi
-  command -v agentcore >/dev/null 2>&1 || { bad "agentcore CLI not on PATH after install"; return 1; }
+  install_agentcore_cli || return 1
 
-  ( cd "$PROJECT_DIR" && source .env \
-      && agentcore configure --entrypoint main.py --name "$AGENT_NAME" --non-interactive \
-      >/dev/null 2>&1 ) \
-    && ok "agentcore configure" \
-    || warn "agentcore configure reported a problem — run it manually in $PROJECT_DIR"
+  # </dev/null so an unexpected prompt gets EOF instead of hanging the run,
+  # and the log is printed on failure rather than discarded.
+  if ( cd "$PROJECT_DIR" && source .env \
+         && agentcore configure --entrypoint main.py --name "$AGENT_NAME" \
+         </dev/null >/tmp/configure.log 2>&1 ); then
+    ok "agentcore configure"
+  else
+    bad "agentcore configure failed:"
+    tail -15 /tmp/configure.log | sed 's/^/       /'
+    return 1
+  fi
 
   printf '   %s⋯%s agentcore deploy (this takes several minutes) ' "$DIM" "$RESET"
   if ( cd "$PROJECT_DIR" && source .env && agentcore deploy >/tmp/deploy.log 2>&1 ); then
