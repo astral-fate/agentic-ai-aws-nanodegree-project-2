@@ -2,7 +2,7 @@
 Test 5 — Loyalty Discount Calculation
 Capability under test : AgentCore Code Interpreter
 Mode                  : offline harness (no AWS account)
-Timestamp             : 2026-09-16T10:33:58+00:00
+Timestamp             : 2026-09-16T14:16:51+00:00
 ====================================================================================
 
 $ agentcore invoke '{"prompt": "I am a Gold member with 4250 points. Calculate my discount on a $150 standard order.", "customer_id": "CUST-123", "session_id": "t5"}'
@@ -28,9 +28,9 @@ $ agentcore invoke '{"prompt": "I am a Gold member with 4250 points. Calculate m
 
 [tool]    calculate_loyalty_discount
             args   {"loyalty_points": 4250, "tier": "Gold", "order_total": 150.0, "product_category": "standard"}
-            result {"sessionId": "ci-75cef4dcac", "isError": false, "content": [{"type": "text", "text": "{\n  \"tier\": \"Gold\",\n  \"product_category\": \"standard\",\n  \"order_total\": 150.0,\n  \"points_redeemed\": 4000,\n  \"points_value\": 40.0,\n  \"subtotal\": 110.0,\n  \"tier_discount_pct\": 10.0,\n  \"tier_discount\": 11.0,\n  \"final_total\": 99.0,\n  \"total_savings\": 51.0,\n  \"points_earned\": 99,\n  \"remaining_points\": 349\n}"}], "structuredContent": {"stdout": "{\n  \"tier\": \"Gold\",\n  \"product_category\": \"standard\",\n  \"order_total\": 150.0,\n  \"points_redeemed\": 4000,\n  \"points …
+            result {"sessionId": "ci-7c3682d7c7", "isError": false, "content": [{"type": "text", "text": "{\n  \"tier\": \"Gold\",\n  \"product_category\": \"standard\",\n  \"order_total\": 150.0,\n  \"points_redeemed\": 4000,\n  \"points_value\": 40.0,\n  \"subtotal\": 110.0,\n  \"tier_discount_pct\": 10.0,\n  \"tier_discount\": 11.0,\n  \"final_total\": 99.0,\n  \"total_savings\": 51.0,\n  \"points_earned\": 99,\n  \"remaining_points\": 349\n}"}], "structuredContent": {"stdout": "{\n  \"tier\": \"Gold\",\n  \"product_category\": \"standard\",\n  \"order_total\": 150.0,\n  \"points_redeemed\": 4000,\n  \"points …
 
-[sandbox] executeCode session=ci-75cef4dcac clearContext=True
+[sandbox] executeCode session=ci-7c3682d7c7 clearContext=True
             ── generated program ──
             import json, math
             

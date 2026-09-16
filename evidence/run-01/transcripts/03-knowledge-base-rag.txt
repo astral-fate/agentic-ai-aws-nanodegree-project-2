@@ -2,7 +2,7 @@
 Test 3 — Knowledge Base (RAG)
 Capability under test : Bedrock Knowledge Base
 Mode                  : offline harness (no AWS account)
-Timestamp             : 2026-09-16T10:33:58+00:00
+Timestamp             : 2026-09-16T14:16:51+00:00
 ====================================================================================
 
 $ agentcore invoke '{"prompt": "What are the benefits of the Platinum loyalty tier?", "customer_id": "CUST-123", "session_id": "t3"}'

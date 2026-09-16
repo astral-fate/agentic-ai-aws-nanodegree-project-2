@@ -142,7 +142,7 @@
           "reason": "Customer requested return",
           "amount": 139.99
         },
-        "output": "{\"refund_id\": \"REF-UL7AQWOR\", \"order_id\": \"ORD-002\", \"status\": \"APPROVED\", \"amount\": 139.99, \"message\": \"Refund approved. Credit appears in 3-5 business days.\", \"created_at\": \"2026-09-16T10:33:58.798915\"}",
+        "output": "{\"refund_id\": \"REF-VEMQ4AWF\", \"order_id\": \"ORD-002\", \"status\": \"APPROVED\", \"amount\": 139.99, \"message\": \"Refund approved. Credit appears in 3-5 business days.\", \"created_at\": \"2026-09-16T14:16:51.018082\"}",
         "status": "success"
       },
       {
@@ -154,7 +154,7 @@
       },
       {
         "kind": "assistant_message",
-        "text": "Order ORD-002 (1\u00d7 Kindle Paperwhite, $139.99) is DELIVERED. It's with USPS under tracking number TRK123456789. It was delivered on 2026-09-13.\n\nYour refund is approved. Refund ID REF-UL7AQWOR for $139.99 on order ORD-002, status APPROVED. Refund approved. Credit appears in 3-5 business days."
+        "text": "Order ORD-002 (1\u00d7 Kindle Paperwhite, $139.99) is DELIVERED. It's with USPS under tracking number TRK123456789. It was delivered on 2026-09-13.\n\nYour refund is approved. Refund ID REF-VEMQ4AWF for $139.99 on order ORD-002, status APPROVED. Refund approved. Credit appears in 3-5 business days."
       },
       {
         "kind": "gateway_disconnected",
@@ -438,13 +438,13 @@
       },
       {
         "kind": "code_interpreter",
-        "session": "ci-75cef4dcac",
+        "session": "ci-7c3682d7c7",
         "clear_context": true,
         "code": "\nimport json, math\n\nloyalty_points   = 4250\ntier             = \"Gold\"\norder_total      = 150.0\nproduct_category = \"standard\"\n\n# Points earned per $1 spent, by product category.\nearn_rates = {\"standard\": 1, \"device\": 2, \"fresh\": 5}\n\n# Tier discount applied to the subtotal AFTER points are redeemed.\ntier_rates = {\"Silver\": 0.00, \"Gold\": 0.10, \"Platinum\": 0.15}\n\nPOINTS_PER_DOLLAR   = 100   # 100 points == $1\nMIN_REDEMPTION      = 500   # nothing redeems below 500 points\nMAX_POINTS_SHARE    = 0.50  # points may not cover more than half the order\n\n# \u2500\u2500 Points redemption \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n# Cap the redeemable value at half the order, then floor to the nearest 500\n# because points only redeem in 500-point blocks.\nmax_points_by_value = int(order_total * MAX_POINTS_SHARE * POINTS_PER_DOLLAR)\nusable_points       = min(loyalty_points, max_points_by_value)\npoints_redeemed     = (usable_points // MIN_REDEMPTION) * MIN_REDEMPTION\nif points_redeemed < MIN_REDEMPTION:\n    points_redeemed = 0\npoints_value = round(points_redeemed / POINTS_PER_DOLLAR, 2)\n\n# \u2500\u2500 Tier discount \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\ntier_rate     = tier_rates.get(tier, 0.00)\nsubtotal      = round(order_total - points_value, 2)\ntier_discount = round(subtotal * tier_rate, 2)\n\n# \u2500\u2500 Totals \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfinal_total   = round(subtotal - tier_discount, 2)\ntotal_savings = round(points_value + tier_discount, 2)\n\n# Points are earned on what the customer actually pays.\nearn_rate        = earn_rates.get(product_category, 1)\npoints_earned    = int(math.floor(final_total * earn_rate))\nremaining_points = loyalty_points - points_redeemed + points_earned\n\nprint(json.dumps({\n    \"tier\":              tier,\n    \"product_category\":  product_category,\n    \"order_total\":       round(order_total, 2),\n    \"points_redeemed\":   points_redeemed,\n    \"points_value\":      points_value,\n    \"subtotal\":          subtotal,\n    \"tier_discount_pct\": round(tier_rate * 100, 2),\n    \"tier_discount\":     tier_discount,\n    \"final_total\":       final_total,\n    \"total_savings\":     total_savings,\n    \"points_earned\":     points_earned,\n    \"remaining_points\":  remaining_points,\n}, indent=2))\n"
       },
       {
         "kind": "code_session_closed",
-        "session": "ci-75cef4dcac"
+        "session": "ci-7c3682d7c7"
       },
       {
         "kind": "tool_call",
@@ -455,7 +455,7 @@
           "order_total": 150.0,
           "product_category": "standard"
         },
-        "output": "{\"sessionId\": \"ci-75cef4dcac\", \"isError\": false, \"content\": [{\"type\": \"text\", \"text\": \"{\\n  \\\"tier\\\": \\\"Gold\\\",\\n  \\\"product_category\\\": \\\"standard\\\",\\n  \\\"order_total\\\": 150.0,\\n  \\\"points_redeemed\\\": 4000,\\n  \\\"points_value\\\": 40.0,\\n  \\\"subtotal\\\": 110.0,\\n  \\\"tier_discount_pct\\\": 10.0,\\n  \\\"tier_discount\\\": 11.0,\\n  \\\"final_total\\\": 99.0,\\n  \\\"total_savings\\\": 51.0,\\n  \\\"points_earned\\\": 99,\\n  \\\"remaining_points\\\": 349\\n}\"}], \"structuredContent\": {\"stdout\": \"{\\n  \\\"tier\\\": \\\"Gold\\\",\\n  \\\"product_category\\\": \\\"standard\\\",\\n  \\\"order_total\\\": 150.0,\\n  \\\"points_redeemed\\\": 4000,\\n  \\\"points_value\\\": 40.0,\\n  \\\"subtotal\\\": 110.0,\\n  \\\"tier_discount_pct\\\": 10.0,\\n  \\\"tier_discount\\\": 11.0,\\n  \\\"final_total\\\": 99.0,\\n  \\\"total_savings\\\": 51.0,\\n  \\\"points_earned\\\": 99,\\n  \\\"remaining_points\\\": 349\\n}\", \"stderr\": \"\", \"exitCode\": 0, \"executionTime\": null}}",
+        "output": "{\"sessionId\": \"ci-7c3682d7c7\", \"isError\": false, \"content\": [{\"type\": \"text\", \"text\": \"{\\n  \\\"tier\\\": \\\"Gold\\\",\\n  \\\"product_category\\\": \\\"standard\\\",\\n  \\\"order_total\\\": 150.0,\\n  \\\"points_redeemed\\\": 4000,\\n  \\\"points_value\\\": 40.0,\\n  \\\"subtotal\\\": 110.0,\\n  \\\"tier_discount_pct\\\": 10.0,\\n  \\\"tier_discount\\\": 11.0,\\n  \\\"final_total\\\": 99.0,\\n  \\\"total_savings\\\": 51.0,\\n  \\\"points_earned\\\": 99,\\n  \\\"remaining_points\\\": 349\\n}\"}], \"structuredContent\": {\"stdout\": \"{\\n  \\\"tier\\\": \\\"Gold\\\",\\n  \\\"product_category\\\": \\\"standard\\\",\\n  \\\"order_total\\\": 150.0,\\n  \\\"points_redeemed\\\": 4000,\\n  \\\"points_value\\\": 40.0,\\n  \\\"subtotal\\\": 110.0,\\n  \\\"tier_discount_pct\\\": 10.0,\\n  \\\"tier_discount\\\": 11.0,\\n  \\\"final_total\\\": 99.0,\\n  \\\"total_savings\\\": 51.0,\\n  \\\"points_earned\\\": 99,\\n  \\\"remaining_points\\\": 349\\n}\", \"stderr\": \"\", \"exitCode\": 0, \"executionTime\": null}}",
         "status": "success"
       },
       {

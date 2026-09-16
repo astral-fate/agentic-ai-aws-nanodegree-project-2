@@ -2,7 +2,7 @@
 Test 4a — Long-Term Memory, session A (store)
 Capability under test : AgentCore Memory
 Mode                  : offline harness (no AWS account)
-Timestamp             : 2026-09-16T10:33:58+00:00
+Timestamp             : 2026-09-16T14:16:51+00:00
 ====================================================================================
 
 $ agentcore invoke '{"prompt": "Hi, I am Jane. I prefer concise responses.", "customer_id": "CUST-123", "session_id": "s-A"}'

@@ -64,11 +64,14 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v15"
+SCRIPT_VERSION="v16"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
 AGENT_NAME="${AGENT_NAME:-customer_support_agent}"
+# Extraction is an asynchronous LLM job. The project instructions say
+# "at least 30 seconds"; 45 was not enough in practice.
+MEMORY_WAIT="${MEMORY_WAIT:-120}"
 
 LAMBDA_ROLE="${PREFIX}-lambda-role"
 KB_ROLE="${PREFIX}-kb-role"
@@ -698,18 +701,38 @@ kind of question:
 - browser: live web pages, when the customer gives you a URL or asks about
   something outside the catalog.
 
-Rules:
-- Call a tool rather than guessing. An order ID, a policy detail or a price is
-  always worth a lookup.
-- Report tool results faithfully. Quote the tracking number, refund ID and
-  totals exactly as returned; never invent or round them.
-- If a message begins with "Customer Context:", that is what you already know
-  about this customer from earlier sessions. Use it naturally — greet them by
-  name, honour a stated preference for short answers — but do not read the
-  context block back to them verbatim.
-- If a tool fails, say plainly what you could not retrieve rather than
-  substituting a plausible-looking value.
-- Be warm and concise. One clear paragraph beats five bullet points.
+Hard rules. These are not stylistic preferences — breaking one produces a
+wrong answer that looks right, which is the worst thing this agent can do.
+
+1. You have NO knowledge of order data. None at all. If the customer mentions
+   an order, you MUST call get_order before saying anything about it. Never
+   state a status, tracking number, carrier or delivery date that did not come
+   back from a tool call in this conversation. "Being processed" and "2-3
+   business days" are not safe defaults; they are fabrications.
+
+2. Before calling initiate_refund you MUST call get_order for that order and
+   pass its `total` as the refund amount. A refund issued for 0, or with the
+   amount omitted, is a defect — not an acceptable answer.
+
+3. Policy, warranty, tier and product questions go to search_knowledge_base.
+   Do not answer them from your own knowledge: the catalog is the source of
+   truth and it changes.
+
+4. Any question involving points, tiers or a final price goes to
+   calculate_loyalty_discount. Never do the arithmetic yourself.
+
+5. If a message begins with "Customer Context:", that is what you already know
+   about this customer from earlier sessions. Use it — greet them by name,
+   honour a stated preference. Never tell a customer you cannot remember
+   things when that block is present.
+
+6. Report tool results faithfully. Quote tracking numbers, refund IDs and
+   totals exactly as returned; never round or paraphrase a figure.
+
+7. If a tool fails, say plainly what you could not retrieve. Never substitute
+   a plausible-looking value for a missing one.
+
+Be warm and concise. One clear paragraph beats five bullet points.
 """
 
 
@@ -2557,7 +2580,7 @@ run_tests() {
   # id | session | expected substrings (comma-separated) | prompt
   local scenarios=(
 "01-order-tracking|t1|SHIPPED,TRK987654321,UPS|Can you track order ORD-001?"
-"02-refund-processing|t2|APPROVED,3-5 business days|I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund."
+"02-refund-processing|t2|APPROVED,3-5 business days,139.99|I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund."
 "03-knowledge-base-rag|t3|same-day,15%,priority|What are the benefits of the Platinum loyalty tier?"
 "04a-memory-session-a|s-A|Jane|Hi, I am Jane. I prefer concise responses."
 "04b-memory-session-b|s-B|Jane,concise|Do you remember my name and communication preference?"
@@ -2570,10 +2593,12 @@ run_tests() {
     IFS='|' read -r id session expected prompt <<<"$entry"
 
     # Memory extraction is an asynchronous LLM job. Asking immediately after
-    # session A reliably fails and looks exactly like a broken hook.
+    # session A reliably fails and looks exactly like a broken hook. 45s was
+    # not enough on a live run — session B was told "this is a new
+    # conversation" — so the default is now 120.
     if [[ "$id" == "04b-memory-session-b" ]]; then
-      printf '   %s⋯%s waiting 45s for memory extraction ' "$DIM" "$RESET"
-      sleep 45; printf '%s✓%s\n' "$GREEN" "$RESET"
+      printf '   %s⋯%s waiting %ss for memory extraction ' "$DIM" "$RESET" "$MEMORY_WAIT"
+      sleep "$MEMORY_WAIT"; printf '%s✓%s\n' "$GREEN" "$RESET"
     fi
 
     payload="$(jq -nc --arg p "$prompt" --arg s "$session" \

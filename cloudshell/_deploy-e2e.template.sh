@@ -64,11 +64,14 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v15"
+SCRIPT_VERSION="v16"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
 AGENT_NAME="${AGENT_NAME:-customer_support_agent}"
+# Extraction is an asynchronous LLM job. The project instructions say
+# "at least 30 seconds"; 45 was not enough in practice.
+MEMORY_WAIT="${MEMORY_WAIT:-120}"
 
 LAMBDA_ROLE="${PREFIX}-lambda-role"
 KB_ROLE="${PREFIX}-kb-role"
@@ -1571,7 +1574,7 @@ run_tests() {
   # id | session | expected substrings (comma-separated) | prompt
   local scenarios=(
 "01-order-tracking|t1|SHIPPED,TRK987654321,UPS|Can you track order ORD-001?"
-"02-refund-processing|t2|APPROVED,3-5 business days|I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund."
+"02-refund-processing|t2|APPROVED,3-5 business days,139.99|I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund."
 "03-knowledge-base-rag|t3|same-day,15%,priority|What are the benefits of the Platinum loyalty tier?"
 "04a-memory-session-a|s-A|Jane|Hi, I am Jane. I prefer concise responses."
 "04b-memory-session-b|s-B|Jane,concise|Do you remember my name and communication preference?"
@@ -1584,10 +1587,12 @@ run_tests() {
     IFS='|' read -r id session expected prompt <<<"$entry"
 
     # Memory extraction is an asynchronous LLM job. Asking immediately after
-    # session A reliably fails and looks exactly like a broken hook.
+    # session A reliably fails and looks exactly like a broken hook. 45s was
+    # not enough on a live run — session B was told "this is a new
+    # conversation" — so the default is now 120.
     if [[ "$id" == "04b-memory-session-b" ]]; then
-      printf '   %s⋯%s waiting 45s for memory extraction ' "$DIM" "$RESET"
-      sleep 45; printf '%s✓%s\n' "$GREEN" "$RESET"
+      printf '   %s⋯%s waiting %ss for memory extraction ' "$DIM" "$RESET" "$MEMORY_WAIT"
+      sleep "$MEMORY_WAIT"; printf '%s✓%s\n' "$GREEN" "$RESET"
     fi
 
     payload="$(jq -nc --arg p "$prompt" --arg s "$session" \

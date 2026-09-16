@@ -74,7 +74,10 @@ SCENARIOS = [
             "session_id": "t2",
         },
         "expected": 'refund ID, APPROVED status, "3-5 business days" message',
-        "check": _has_all("REF-", "APPROVED", "3-5 business days"),
+        # 139.99 included deliberately: the live agent once issued this refund
+        # for $0 because it called initiate_refund without looking the order
+        # up first, and a check for APPROVED alone called that a pass.
+        "check": _has_all("REF-", "APPROVED", "3-5 business days", "139.99"),
     },
     {
         "id": "03-knowledge-base-rag",

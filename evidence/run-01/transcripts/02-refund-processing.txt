@@ -2,7 +2,7 @@
 Test 2 — Refund Processing
 Capability under test : Gateway (Lambda target)
 Mode                  : offline harness (no AWS account)
-Timestamp             : 2026-09-16T10:33:58+00:00
+Timestamp             : 2026-09-16T14:16:51+00:00
 ====================================================================================
 
 $ agentcore invoke '{"prompt": "I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund.", "customer_id": "CUST-123", "session_id": "t2"}'
@@ -23,7 +23,7 @@ $ agentcore invoke '{"prompt": "I want to return my Kindle Paperwhite (ORD-002).
 
 [tool]    refund-processor___initiate_refund
             args   {"order_id": "ORD-002", "reason": "Customer requested return", "amount": 139.99}
-            result {"refund_id": "REF-UL7AQWOR", "order_id": "ORD-002", "status": "APPROVED", "amount": 139.99, "message": "Refund approved. Credit appears in 3-5 business days.", "created_at": "2026-09-16T10:33:58.798915"}
+            result {"refund_id": "REF-VEMQ4AWF", "order_id": "ORD-002", "status": "APPROVED", "amount": 139.99, "message": "Refund approved. Credit appears in 3-5 business days.", "created_at": "2026-09-16T14:16:51.018082"}
 
 [memory]  create_event evt-0002 actor=CUST-123 session=t2 → 0 memory record(s) extracted
 
@@ -32,7 +32,7 @@ AGENT REPLY
 ------------------------------------------------------------------------------------
 Order ORD-002 (1× Kindle Paperwhite, $139.99) is DELIVERED. It's with USPS under tracking number TRK123456789. It was delivered on 2026-09-13.
 
-Your refund is approved. Refund ID REF-UL7AQWOR for $139.99 on order ORD-002, status APPROVED. Refund approved. Credit appears in 3-5 business days.
+Your refund is approved. Refund ID REF-VEMQ4AWF for $139.99 on order ORD-002, status APPROVED. Refund approved. Credit appears in 3-5 business days.
 
 ------------------------------------------------------------------------------------
 Expected: refund ID, APPROVED status, "3-5 business days" message
