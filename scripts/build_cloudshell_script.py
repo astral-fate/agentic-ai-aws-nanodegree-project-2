@@ -6,7 +6,7 @@ Build the self-contained CloudShell deploy script.
 Reads `cloudshell/_deploy-e2e.template.sh` and replaces the
 `__EMBEDDED_FILES__` marker with quoted heredocs carrying the real contents of
 every file the agent needs — `main.py`, both Lambda handlers, the tool schema
-and the product catalog. The result, `cloudshell/deploy-e2e-v13.sh`, needs no
+and the product catalog. The result, `cloudshell/deploy-e2e-v14.sh`, needs no
 clone and no network beyond AWS itself.
 
 Generating it rather than maintaining it by hand is the point: the embedded
@@ -43,7 +43,7 @@ def version() -> str:
 
 def output_path() -> Path:
     """
-    Versioned filename, e.g. deploy-e2e-v13.sh.
+    Versioned filename, e.g. deploy-e2e-v14.sh.
 
     The version is in the name because the script is uploaded to CloudShell by
     hand as well as curl'd. Two files differing only by content, sitting in the
@@ -61,6 +61,9 @@ FILES: List[Tuple[str, str, str]] = [
     ("project/starter/lambda/refund_processor.py", "lambda/refund_processor.py", "REFUND_PROCESSOR_EOF"),
     ("project/starter/lambda/lambda_schema", "lambda/lambda_schema", "LAMBDA_SCHEMA_EOF"),
     ("project/starter/product_catalog.txt", "product_catalog.txt", "CATALOG_EOF"),
+    # Embedded so requirements.txt is derived from the project's own
+    # dependency list rather than a hand-kept copy that can omit one.
+    ("project/starter/pyproject.toml", "pyproject.toml", "PYPROJECT_EOF"),
 ]
 
 INDENT = "  "

@@ -64,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v13"
+SCRIPT_VERSION="v14"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -237,6 +237,7 @@ __EMBEDDED_FILES__
   ok "lambda/refund_processor.py"
   ok "lambda/lambda_schema"
   ok "product_catalog.txt"
+  ok "pyproject.toml"
   record "Project files" "OK" "$PROJECT_DIR"
 }
 
@@ -1259,6 +1260,67 @@ install_agentcore_cli() {
   return 1
 }
 
+# Build requirements.txt from the starter's own pyproject.toml.
+#
+# It was hand-written before, and it omitted playwright. main.py imports
+# strands_tools.browser, which imports playwright, so the container failed at
+# import and the runtime never started — surfacing only as "An error occurred
+# when starting the runtime" from InvokeAgentRuntime, several layers away from
+# the cause. The authoritative dependency list ships with the project; there
+# is no reason to maintain a second copy of it by hand.
+write_requirements() {
+  local src="$PROJECT_DIR/pyproject.toml"
+  [[ -f "$src" ]] || { bad "missing $src"; return 1; }
+
+  python3 - "$src" "$PROJECT_DIR/requirements.txt" <<'PYEOF'
+import re
+import sys
+
+source, dest = sys.argv[1], sys.argv[2]
+text = open(source, encoding="utf-8").read()
+
+try:
+    import tomllib
+    deps = tomllib.loads(text)["project"]["dependencies"]
+except Exception:
+    block = re.search(r"dependencies\s*=\s*\[(.*?)\]", text, re.S)
+    deps = re.findall(r'"([^"]+)"', block.group(1)) if block else []
+
+# `asyncio` is excluded deliberately. It is a standard-library module; the
+# PyPI package of that name is an abandoned 3.4.3 backport, so the declared
+# ">=4.0.0" cannot resolve at all, and installing it would shadow the real
+# module if it did.
+def name_of(spec):
+    return re.split(r"[<>=!~\[ ]", spec, maxsplit=1)[0].strip().lower()
+
+
+kept = [d for d in deps if name_of(d) != "asyncio"]
+
+with open(dest, "w", encoding="utf-8") as fh:
+    fh.write("# Generated from pyproject.toml by deploy-e2e — do not hand-edit.\n")
+    fh.write("\n".join(kept) + "\n")
+
+print(f"   ✓ requirements.txt: {len(kept)} deps ({', '.join(sorted(kept))})")
+PYEOF
+}
+
+# Show why the container refused to start.
+#
+# InvokeAgentRuntime reports "An error occurred when starting the runtime" and
+# points at CloudWatch; the actual traceback is there, and fetching it here
+# saves a round trip.
+tail_runtime_logs() {
+  local arn group
+  arn="$(grep -oE 'runtime/[A-Za-z0-9_-]+' /tmp/probe.log 2>/dev/null | head -1 | cut -d/ -f2)"
+  [[ -z "$arn" ]] && return 0
+
+  group="/aws/bedrock-agentcore/runtimes/${arn}-DEFAULT"
+  printf '\n       %sRuntime logs (%s):%s\n' "$BOLD" "$group" "$RESET"
+  aws logs tail "$group" --since 15m --region "$REGION" 2>/dev/null \
+    | grep -viE '^\s*$' | tail -30 | sed 's/^/       /' \
+    || printf '       (no log events yet — the container may still be starting)\n'
+}
+
 deploy_agent() {
   phase "Deploying the agent to AgentCore Runtime"
 
@@ -1284,13 +1346,7 @@ export AWS_REGION="$REGION"
 EOF
   ok "wrote $PROJECT_DIR/.env"
 
-  cat > "$PROJECT_DIR/requirements.txt" <<'EOF'
-strands-agents>=1.28.0
-strands-agents-tools>=0.2.21
-bedrock-agentcore>=1.4.1
-bedrock-agentcore-starter-toolkit>=0.3.0
-nest-asyncio>=1.6.0
-EOF
+  write_requirements || return 1
 
   install_agentcore_cli || return 1
 
@@ -1394,13 +1450,20 @@ EOF
   probe="$( cd "$PROJECT_DIR" && source .env \
     && AGENTCORE_SUPPRESS_RECOMMENDATION=1 agentcore invoke \
        '{"prompt":"ping","customer_id":"CUST-000","session_id":"probe"}' 2>&1 )"
+  printf '%s' "$probe" > /tmp/probe.log
 
-  if grep -qiE 'not deployed|information unavailable|no such|not found' <<<"$probe"; then
+  # Failure list widened after v13 called this green on a response that read
+  # "Invocation failed: ... An error occurred when starting the runtime". The
+  # runtime existed and the CLI knew its ARN, so none of the earlier patterns
+  # matched — but the container was crash-looping, and seven transcripts went
+  # out labelled as test failures.
+  if grep -qiE 'not deployed|information unavailable|no such|not found|invocation failed|error occurred|exception|traceback' <<<"$probe"; then
     bad "the agent is not answering after $deploy_cmd:"
-    sed 's/^/       /' <<<"$probe" | head -8
-    printf '\n       %sFull %s log:%s\n' "$BOLD" "$deploy_cmd" "$RESET"
-    sed 's/^/       /' /tmp/deploy.log | tail -45
-    record "Agent deploy" "FAILED" "agent not reachable — see /tmp/deploy.log"
+    grep -viE '^\s*[│╭╰]' <<<"$probe" | grep -viE '^\s*$' | head -8 | sed 's/^/       /'
+    tail_runtime_logs
+    printf '\n       %sLast lines of the %s log:%s\n' "$BOLD" "$deploy_cmd" "$RESET"
+    tail -20 /tmp/deploy.log | sed 's/^/       /'
+    record "Agent deploy" "FAILED" "runtime not starting — see CloudWatch"
     return 1
   fi
 
