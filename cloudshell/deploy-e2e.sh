@@ -1541,9 +1541,13 @@ ensure_indexer_role() {
     arn="$(aws iam create-role --role-name "$name" \
       --assume-role-policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${account}:root\"},\"Action\":\"sts:AssumeRole\"}]}" \
       --query Role.Arn --output text 2>/dev/null)"
+    # stdout is redirected, not just stderr: this function's stdout IS the
+    # returned ARN, so anything else printed here would be concatenated onto
+    # it and every later use of the role ARN would be silently malformed.
     [[ -n "$arn" && "$arn" != "None" ]] && \
       aws iam put-role-policy --role-name "$name" --policy-name aoss-index \
-        --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["aoss:APIAccessAll"],"Resource":"*"}]}' 2>/dev/null
+        --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["aoss:APIAccessAll"],"Resource":"*"}]}' \
+        >/dev/null 2>&1
     sleep 12   # IAM propagation, before anything tries to assume it
   fi
 
