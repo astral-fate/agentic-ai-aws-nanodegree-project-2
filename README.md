@@ -219,7 +219,9 @@ loads each page for real. A page whose content pane never painted is reported
 
 [![Lambda functions](evidence/run-02/screenshots/05-lambda-functions.png)](evidence/run-02/screenshots/05-lambda-functions.png)
 
-**API Gateway** — each GET carries the operation name that becomes an MCP tool
+**API Gateway** — `cs-agent-order-api`, the REST API the Gateway fronts.
+The three GET methods and their operation names are one level down, in
+the Resources view, which is not captured here
 
 [![API Gateway resources](evidence/run-02/screenshots/06-api-gateway-resources.png)](evidence/run-02/screenshots/06-api-gateway-resources.png)
 
