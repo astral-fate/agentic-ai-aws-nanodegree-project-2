@@ -63,7 +63,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v3"
+SCRIPT_VERSION="v4"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -592,6 +592,11 @@ sync_data_access_policy() {
       --policy-version "$version" --policy "$policy" --region "$REGION" 2>&1)"
     if grep -q '"name"' <<<"$out"; then
       ok "data access policy updated (was version $version)"
+    elif grep -q "No changes detected" <<<"$out"; then
+      # The policy already says exactly what we were about to write. That is
+      # the desired state, not an error — treating it as one is what stopped
+      # the previous run before it reached the read-back check below.
+      ok "data access policy already current"
     else
       bad "could not update the data access policy: $(head -c 240 <<<"$out")"
       return 1
@@ -678,16 +683,20 @@ create_vector_index() {
   secret="$(jq -r .SecretAccessKey <<<"$keys")"
   ok "minted a temporary key for ${PREFIX}-indexer"
 
-  # A brand-new access key is not usable for a few seconds, and the data
-  # access policy needs to propagate too. Both show up as the same 403.
-  sleep 20
+  # A brand-new IAM access key is not accepted immediately — propagation is
+  # usually seconds but can run past half a minute, and the symptom is the
+  # same 403 as a policy problem.
+  printf '   %s⋯%s waiting 45s for the new key to propagate ' "$DIM" "$RESET"
+  sleep 45
+  printf '%s✓%s\n' "$GREEN" "$RESET"
 
-  # AWS_SESSION_TOKEN is cleared explicitly: CloudShell exports one for the
-  # ambient identity, and leaving it set would make botocore send it alongside
-  # the new long-lived key, which fails signature validation.
-  AWS_ACCESS_KEY_ID="$access" \
-  AWS_SECRET_ACCESS_KEY="$secret" \
-  AWS_SESSION_TOKEN="" \
+  # env -u, not AWS_SESSION_TOKEN="". CloudShell exports a session token for
+  # the ambient identity; botocore treats an empty-string token as a token and
+  # signs with it, so the request carries an empty x-amz-security-token
+  # alongside a long-lived key and is rejected. The variable has to be absent.
+  env -u AWS_SESSION_TOKEN -u AWS_PROFILE -u AWS_SECURITY_TOKEN \
+    AWS_ACCESS_KEY_ID="$access" \
+    AWS_SECRET_ACCESS_KEY="$secret" \
   python3 - "$endpoint" "$INDEX_NAME" "$VECTOR_FIELD" "$EMBED_DIM" "$REGION" <<'PYEOF'
 import json, sys, time
 import botocore.session
@@ -713,6 +722,21 @@ body = json.dumps({
 session = botocore.session.Session()
 creds = session.get_credentials().get_frozen_credentials()
 url = f"{endpoint}/{index}"
+
+# Confirm which identity is actually signing. A 403 from OpenSearch says
+# nothing about who it rejected, and the whole point of the indexer user is
+# that the ambient (root) credentials must NOT be the ones in play.
+try:
+    sts = botocore.session.Session().create_client("sts", region_name=region)
+    who = sts.get_caller_identity()["Arn"]
+    print(f"   · signing as {who}")
+    if who.endswith(":root"):
+        print("   ! signing as root — OpenSearch Serverless will reject this")
+except Exception as exc:  # identity check must never block the attempt
+    print(f"   · could not confirm the signing identity: {exc}")
+
+if creds.token:
+    print("   ! a session token is present alongside the key; this will 403")
 
 def send(method, url, body=None):
     request = AWSRequest(method=method, url=url, data=body,
@@ -1018,16 +1042,33 @@ PYEOF
   fi
   ok "exported OpenAPI spec, operations: $ops"
 
-  # An openApiSchema target rejects the bare GATEWAY_IAM_ROLE that a Lambda
-  # target accepts: "IamCredentialProvider is required for openApiSchema
-  # targets using IAM authentication". So the provider carries the gateway
-  # role explicitly.
-  local gw_role creds out bucket
-  gw_role="$(load gw_role_arn)"
-  creds="[{\"credentialProviderType\":\"GATEWAY_IAM_ROLE\",\"credentialProvider\":{\"iamCredentialProvider\":{\"roleArn\":\"${gw_role}\"}}}]"
+  local out bucket
+  local api_id; api_id="$(load api_id)"
 
+  # The native apiGateway target — the same thing the console's "API Gateway
+  # REST API stage" option creates. The field is `stage`, not `stageName`;
+  # that single word was the original failure, and the error message
+  # ("IamCredentialProvider is required for openApiSchema targets") sent me
+  # down the OpenAPI path instead, because an unknown key made the CLI fall
+  # through to a different member of the union.
   out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
     --name "$ORDER_FN" \
+    --target-configuration "{\"mcp\":{\"apiGateway\":{\"restApiId\":\"${api_id}\",\"stage\":\"${STAGE}\"}}}" \
+    --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
+    --region "$REGION" 2>&1)"
+  if grep -q '"targetId"' <<<"$out"; then
+    ok "target: order-tracker (API Gateway stage)"; return 0
+  fi
+  warn "apiGateway target failed: $(head -c 240 <<<"$out")"
+
+  # OpenAPI is the documented alternative. Its iamCredentialProvider needs
+  # `service` and `region` — the signing target, not a role ARN, since the
+  # Gateway signs execute-api calls with its own gateway role.
+  local creds
+  creds="[{\"credentialProviderType\":\"GATEWAY_IAM_ROLE\",\"credentialProvider\":{\"iamCredentialProvider\":{\"service\":\"execute-api\",\"region\":\"${REGION}\"}}}]"
+
+  out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
+    --name "${ORDER_FN}-openapi" \
     --target-configuration "{\"mcp\":{\"openApiSchema\":{\"inlinePayload\":$(jq -Rs . < /tmp/openapi-final.json)}}}" \
     --credential-provider-configurations "$creds" \
     --region "$REGION" 2>&1)"
@@ -1036,11 +1077,11 @@ PYEOF
   fi
   warn "inline OpenAPI target failed: $(head -c 240 <<<"$out")"
 
-  # The inline payload has a size limit; S3 is the documented route above it.
+  # The inline payload has a size limit; S3 is the route above it.
   bucket="$(load bucket)"
   aws s3 cp /tmp/openapi-final.json "s3://${bucket}/openapi.json" --region "$REGION" >/dev/null 2>&1
   out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
-    --name "$ORDER_FN" \
+    --name "${ORDER_FN}-openapi" \
     --target-configuration "{\"mcp\":{\"openApiSchema\":{\"s3\":{\"uri\":\"s3://${bucket}/openapi.json\",\"bucketOwnerAccountId\":\"$(load account)\"}}}}" \
     --credential-provider-configurations "$creds" \
     --region "$REGION" 2>&1)"
