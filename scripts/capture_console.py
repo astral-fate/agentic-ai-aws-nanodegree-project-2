@@ -117,22 +117,25 @@ def build_targets(region: str, state: dict) -> list[dict]:
     targets: list[dict] = [
         {
             "name": "01-agentcore-runtime",
-            "url": console(region, f"bedrock/home?region={region}#/agentcore/runtime"),
-            "alt_urls": [console(region, f"bedrock/home?region={region}#/agentcore")],
+            "url": console(region, f"bedrock-agentcore/home?region={region}#/runtimes"),
+            "alt_urls": [
+                console(region, f"bedrock-agentcore/home?region={region}#/agents"),
+                console(region, f"bedrock-agentcore/home?region={region}#"),
+            ],
             "note": "Bedrock → AgentCore → Runtime: the deployed agent.",
             "wait": 12000,
             "attempts": 12,
-            "warm_url": console(region, f"bedrock/home?region={region}"),
+            "warm_url": console(region, f"bedrock-agentcore/home?region={region}#"),
         },
         {
             "name": "02-agentcore-gateway",
-            "url": console(region, f"bedrock/home?region={region}#/agentcore/gateways"),
+            "url": console(region, f"bedrock-agentcore/home?region={region}#/gateways"),
             "note": "Bedrock → AgentCore → Gateways: CustomerSupportGateway "
                     "and its two targets (API Gateway + Lambda).",
             "wait": 12000,
             "expect": "ateway",
             "attempts": 12,
-            "warm_url": console(region, f"bedrock/home?region={region}"),
+            "warm_url": console(region, f"bedrock-agentcore/home?region={region}#"),
         },
         {
             "name": "03-knowledge-base",
@@ -149,11 +152,11 @@ def build_targets(region: str, state: dict) -> list[dict]:
         },
         {
             "name": "04-agentcore-memory",
-            "url": console(region, f"bedrock/home?region={region}#/agentcore/memory"),
+            "url": console(region, f"bedrock-agentcore/home?region={region}#/memories"),
             "note": "Bedrock → AgentCore → Memory: both strategies and their namespaces.",
             "wait": 12000,
             "attempts": 12,
-            "warm_url": console(region, f"bedrock/home?region={region}"),
+            "warm_url": console(region, f"bedrock-agentcore/home?region={region}#"),
         },
         {
             "name": "05-lambda-functions",
@@ -243,13 +246,17 @@ def mint_signin_url(region: str, duration: int = 3600) -> str | None:
         aws_session_token=None,
     )
 
-    # Read-only: the federated session is for taking screenshots, and a
-    # session that could change anything is a session that could change
-    # something by accident.
+    # A federation session's effective permissions are the *intersection* of
+    # this policy and the IAM user's own, and that user has ReadOnlyAccess.
+    # So "*" here does not grant write access — it declines to narrow further.
+    #
+    # It cannot be narrowed the obvious way regardless: AWS rejects a wildcard
+    # in the service vendor, so "*:Get*" is a MalformedPolicyDocument. Listing
+    # every console service explicitly would be a long list that breaks
+    # whenever a page loads from a service not on it.
     policy = json.dumps({
         "Version": "2012-10-17",
-        "Statement": [{"Effect": "Allow", "Action": ["*:Get*", "*:List*", "*:Describe*",
-                                                     "*:BatchGet*"], "Resource": "*"}],
+        "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}],
     })
 
     try:
