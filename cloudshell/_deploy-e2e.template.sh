@@ -8,6 +8,7 @@
 #     bash deploy-e2e.sh              deploy everything, then run the 6 tests
 #     bash deploy-e2e.sh --status     show what exists, change nothing
 #     bash deploy-e2e.sh --test-only  re-run the 6 tests against what is there
+#     bash deploy-e2e.sh --package    zip main.py + transcripts for submission
 #     bash deploy-e2e.sh --teardown   delete everything it created
 #
 #  ─────────────────────────────────────────────────────────────────────
@@ -63,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v7"
+SCRIPT_VERSION="v8"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -1202,24 +1203,40 @@ EOF
 # directory that is genuinely not on PATH all looked identical. Nothing is
 # silenced now, and the script directory is asked of Python rather than
 # assumed to be ~/.local/bin.
+# Install the AgentCore starter toolkit into a dedicated virtualenv.
+#
+# Not `pip install --user`: CloudShell's python3 is itself inside a
+# virtualenv, where user site-packages are invisible and pip refuses outright
+# ("Can not perform a '--user' install"). A venv of our own avoids that, gives
+# the CLI a path that is known rather than guessed, and leaves CloudShell's
+# own environment untouched.
 install_agentcore_cli() {
-  local scripts_dir
-  scripts_dir="$(python3 -c \
-    "import sysconfig; print(sysconfig.get_path('scripts', scheme='posix_user'))" 2>/dev/null)"
+  local venv="${HOME}/.${PREFIX}-venv"
 
-  [[ -n "$scripts_dir" ]] && export PATH="${scripts_dir}:$PATH"
-  export PATH="${HOME}/.local/bin:$PATH"
-  hash -r 2>/dev/null
-
-  if command -v agentcore >/dev/null 2>&1; then
-    ok "agentcore already installed: $(command -v agentcore)"
+  if [[ -x "${venv}/bin/agentcore" ]]; then
+    export PATH="${venv}/bin:$PATH"
+    hash -r 2>/dev/null
+    ok "agentcore already installed: ${venv}/bin/agentcore"
     return 0
   fi
 
+  if [[ ! -x "${venv}/bin/pip" ]]; then
+    printf '   %s⋯%s creating a virtualenv at %s ' "$DIM" "$RESET" "$venv"
+    if python3 -m venv "$venv" >/tmp/venv.log 2>&1; then
+      printf '%s✓%s\n' "$GREEN" "$RESET"
+    else
+      printf '%s✗%s\n' "$RED" "$RESET"
+      bad "could not create the virtualenv:"
+      tail -10 /tmp/venv.log | sed 's/^/       /'
+      return 1
+    fi
+  fi
+
   printf '   %s⋯%s installing the AgentCore starter toolkit (a few minutes) ' "$DIM" "$RESET"
-  if python3 -m pip install --user --quiet \
+  if "${venv}/bin/pip" install --quiet --upgrade pip >/tmp/pip.log 2>&1 && \
+     "${venv}/bin/pip" install --quiet \
        bedrock-agentcore-starter-toolkit strands-agents strands-agents-tools \
-       bedrock-agentcore nest-asyncio >/tmp/pip.log 2>&1; then
+       bedrock-agentcore nest-asyncio >>/tmp/pip.log 2>&1; then
     printf '%s✓%s\n' "$GREEN" "$RESET"
   else
     printf '%s✗%s\n' "$RED" "$RESET"
@@ -1229,17 +1246,16 @@ install_agentcore_cli() {
     return 1
   fi
 
+  export PATH="${venv}/bin:$PATH"
   hash -r 2>/dev/null
+
   if command -v agentcore >/dev/null 2>&1; then
     ok "agentcore at $(command -v agentcore)"
     return 0
   fi
 
-  bad "the toolkit installed but its CLI is not on PATH"
-  printf '       python scripts dir : %s\n' "${scripts_dir:-unknown}"
-  printf '       python3            : %s — %s\n' "$(command -v python3)" "$(python3 -V 2>&1)"
-  printf '       candidates found   : %s\n' \
-    "$(find "$HOME" -maxdepth 4 -name 'agentcore' -type f 2>/dev/null | head -3 | tr '\n' ' ')"
+  bad "the toolkit installed but its CLI is missing from ${venv}/bin"
+  printf '       contents: %s\n' "$(ls "${venv}/bin" 2>/dev/null | tr '\n' ' ')"
   return 1
 }
 
@@ -1375,6 +1391,46 @@ run_tests() {
 # ═════════════════════════════════════════════════════════════════════════════
 #  Summary, status, teardown
 # ═════════════════════════════════════════════════════════════════════════════
+# Bundle everything the submission needs into one file.
+#
+# CloudShell downloads one path at a time, so a single archive beats fetching
+# seven transcripts by hand.
+package_submission() {
+  phase "Packaging the submission"
+
+  local out="${HOME}/cs-agent-submission.zip"
+  local staging="/tmp/cs-agent-submission"
+
+  rm -rf "$staging" "$out"
+  mkdir -p "$staging/evidence-live"
+
+  cp "$PROJECT_DIR/main.py" "$staging/" 2>/dev/null
+  cp -r "$PROJECT_DIR/lambda" "$staging/" 2>/dev/null
+  cp "$PROJECT_DIR/product_catalog.txt" "$staging/" 2>/dev/null
+  cp "$EVIDENCE_DIR"/*.txt "$staging/evidence-live/" 2>/dev/null
+
+  # The resource IDs, so a reviewer can see what was actually deployed.
+  {
+    printf 'Deployed resources — account %s, %s\n\n' "$(load account)" "$REGION"
+    printf '  REST API        %s\n' "$(load api_url)"
+    printf '  Knowledge Base  %s\n' "$(load kb_id)"
+    printf '  Memory          %s\n' "$(load memory_id)"
+    printf '  Gateway         %s\n' "$(load gateway_url)"
+    printf '  Collection      %s\n' "$(load collection_arn)"
+    printf '  S3 bucket       %s\n' "$(load bucket)"
+    printf '\nGenerated %s by deploy-e2e %s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SCRIPT_VERSION"
+  } > "$staging/DEPLOYED_RESOURCES.txt"
+
+  ( cd "$staging" && zip -qr "$out" . )
+
+  ok "$out ($(du -h "$out" | cut -f1))"
+  printf '\n   %sDownload it:%s CloudShell → Actions → Download file → paste:\n' "$BOLD" "$RESET"
+  printf '     %s\n\n' "$out"
+  printf '   Transcripts included: %s\n' \
+    "$(ls "$EVIDENCE_DIR"/*.txt 2>/dev/null | wc -l)"
+}
+
 summary() {
   printf '\n%s════════════════════════════════════════════════════════════════════%s\n' "$BOLD" "$RESET"
   printf '%s SUMMARY%s\n' "$BOLD" "$RESET"
@@ -1494,7 +1550,8 @@ main() {
   case "${1:-}" in
     --status)    show_status; exit 0 ;;
     --teardown)  teardown;    exit 0 ;;
-    --test-only) preflight; materialise; run_tests; summary; exit 0 ;;
+    --test-only) preflight; materialise; install_agentcore_cli && run_tests; summary; exit 0 ;;
+    --package)   package_submission; exit 0 ;;
   esac
 
   printf '%s\n' "${BOLD}Customer Support Agent — end-to-end deploy ${SCRIPT_VERSION}${RESET}"
@@ -1513,6 +1570,7 @@ main() {
   ensure_memory
   ensure_gateway
   deploy_agent && run_tests
+  package_submission
   summary
 }
 

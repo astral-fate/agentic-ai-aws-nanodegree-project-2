@@ -141,7 +141,7 @@ scripts/
 
 tests/                     ★ 99 offline tests, no AWS required
 cloudshell/
-  deploy-e2e-v7.sh              ★ self-contained: deploy + test, one command
+  deploy-e2e-v8.sh              ★ self-contained: deploy + test, one command
   run-all.sh                   infrastructure only, console for KB + Gateway
 evidence/run-01/             transcripts, screenshots, traces
 ```
