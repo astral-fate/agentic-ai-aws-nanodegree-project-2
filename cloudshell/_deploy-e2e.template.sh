@@ -486,8 +486,9 @@ ensure_bucket() {
 ensure_collection() {
   phase "OpenSearch Serverless vector store  ${YELLOW}(billed hourly while it exists)${RESET}"
 
-  local caller kb_role
+  local caller kb_role indexer
   caller="$(load caller_arn)"; kb_role="$(load kb_role_arn)"
+  indexer="$(ensure_indexer_role)"
 
   # Three policies must exist before the collection, or creation fails.
   aws opensearchserverless create-security-policy --name "${COLLECTION}-enc" --type encryption \
@@ -498,9 +499,37 @@ ensure_collection() {
     --policy "[{\"Rules\":[{\"ResourceType\":\"collection\",\"Resource\":[\"collection/${COLLECTION}\"]},{\"ResourceType\":\"dashboard\",\"Resource\":[\"collection/${COLLECTION}\"]}],\"AllowFromPublic\":true}]" \
     --region "$REGION" >/dev/null 2>&1 && ok "network policy" || skip "network policy exists"
 
-  aws opensearchserverless create-access-policy --name "${COLLECTION}-data" --type data \
-    --policy "[{\"Rules\":[{\"ResourceType\":\"index\",\"Resource\":[\"index/${COLLECTION}/*\"],\"Permission\":[\"aoss:*\"]},{\"ResourceType\":\"collection\",\"Resource\":[\"collection/${COLLECTION}\"],\"Permission\":[\"aoss:*\"]}],\"Principal\":[\"${caller}\",\"${kb_role}\"]}]" \
-    --region "$REGION" >/dev/null 2>&1 && ok "data access policy" || skip "data access policy exists"
+  # Principals: the indexer role (which actually creates the index), the KB
+  # service role, and the caller. The caller is included for convenience but
+  # is NOT relied on — when the caller is the account root, OpenSearch
+  # Serverless does not match it, which is why the indexer role exists.
+  local principals
+  principals="$(printf '"%s","%s"' "$indexer" "$kb_role")"
+  [[ "$caller" != *":root" ]] && principals="${principals},\"${caller}\""
+
+  local data_policy
+  data_policy="[{\"Rules\":[{\"ResourceType\":\"index\",\"Resource\":[\"index/${COLLECTION}/*\"],\"Permission\":[\"aoss:*\"]},{\"ResourceType\":\"collection\",\"Resource\":[\"collection/${COLLECTION}\"],\"Permission\":[\"aoss:*\"]}],\"Principal\":[${principals}]}]"
+
+  if aws opensearchserverless create-access-policy --name "${COLLECTION}-data" --type data \
+       --policy "$data_policy" --region "$REGION" >/dev/null 2>&1; then
+    ok "data access policy"
+  else
+    # Already exists — rewrite it, because a policy created on an earlier run
+    # may name the wrong principals. update-access-policy needs the current
+    # version, so read it first.
+    local version
+    version="$(aws opensearchserverless get-access-policy --name "${COLLECTION}-data" \
+      --type data --region "$REGION" --query 'accessPolicyDetail.policyVersion' \
+      --output text 2>/dev/null)"
+    if [[ -n "$version" && "$version" != "None" ]] && \
+       aws opensearchserverless update-access-policy --name "${COLLECTION}-data" \
+         --type data --policy-version "$version" --policy "$data_policy" \
+         --region "$REGION" >/dev/null 2>&1; then
+      ok "data access policy updated"
+    else
+      skip "data access policy exists"
+    fi
+  fi
 
   local arn
   arn="$(aws opensearchserverless batch-get-collection --names "$COLLECTION" --region "$REGION" \
@@ -530,11 +559,59 @@ ensure_collection() {
   record "OpenSearch Serverless" "OK" "$COLLECTION (BILLING — tear down when done)"
 }
 
+# A role that exists purely to create the vector index.
+#
+# OpenSearch Serverless data-access policies are matched against the signing
+# principal, and the account root does not match — a root-signed request gets
+# a bare 403 with no explanation. Since CloudShell is very often running as
+# root, the script mints a role that root can assume, names *that* in the data
+# access policy, and signs the index request with its temporary credentials.
+ensure_indexer_role() {
+  local name="${PREFIX}-indexer" account arn
+  account="$(load account)"
+
+  arn="$(aws iam get-role --role-name "$name" --query Role.Arn --output text 2>/dev/null)"
+  if [[ -z "$arn" || "$arn" == "None" ]]; then
+    arn="$(aws iam create-role --role-name "$name" \
+      --assume-role-policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${account}:root\"},\"Action\":\"sts:AssumeRole\"}]}" \
+      --query Role.Arn --output text 2>/dev/null)"
+    [[ -n "$arn" && "$arn" != "None" ]] && \
+      aws iam put-role-policy --role-name "$name" --policy-name aoss-index \
+        --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["aoss:APIAccessAll"],"Resource":"*"}]}' 2>/dev/null
+    sleep 12   # IAM propagation, before anything tries to assume it
+  fi
+
+  save indexer_role_arn "$arn"
+  printf '%s' "$arn"
+}
+
 # The vector index is created over the OpenSearch REST API, signed with SigV4
-# for the 'aoss' service. Done with botocore, which CloudShell already has, so
-# there is no pip install to fail.
+# for the 'aoss' service, using credentials from the assumed indexer role.
+# botocore ships with CloudShell, so there is no pip install to fail.
 create_vector_index() {
   local endpoint="$1"
+  local indexer; indexer="$(load indexer_role_arn)"
+
+  # Assume the indexer role. If that fails, fall back to the ambient
+  # credentials — which works whenever the caller is not root.
+  local creds access secret token
+  creds="$(aws sts assume-role --role-arn "$indexer" \
+    --role-session-name "${PREFIX}-index" --duration-seconds 3600 \
+    --query Credentials --output json 2>/dev/null)"
+
+  if [[ -n "$creds" && "$creds" != "None" ]]; then
+    access="$(jq -r .AccessKeyId <<<"$creds")"
+    secret="$(jq -r .SecretAccessKey <<<"$creds")"
+    token="$(jq -r .SessionToken <<<"$creds")"
+    ok "assumed ${PREFIX}-indexer for index creation"
+  else
+    warn "could not assume the indexer role — using ambient credentials"
+    access=""; secret=""; token=""
+  fi
+
+  AWS_ACCESS_KEY_ID="${access:-${AWS_ACCESS_KEY_ID:-}}" \
+  AWS_SECRET_ACCESS_KEY="${secret:-${AWS_SECRET_ACCESS_KEY:-}}" \
+  AWS_SESSION_TOKEN="${token:-${AWS_SESSION_TOKEN:-}}" \
   python3 - "$endpoint" "$INDEX_NAME" "$VECTOR_FIELD" "$EMBED_DIM" "$REGION" <<'PYEOF'
 import json, sys, time
 import botocore.session
@@ -567,22 +644,42 @@ def send(method, url, body=None):
     SigV4Auth(creds, "aoss", region).add_auth(request)
     return URLLib3Session().send(request.prepare())
 
-response = send("HEAD", url)
-if response.status_code == 200:
+def body_of(response):
+    return response.text if hasattr(response, "text") else response.content.decode()
+
+
+if send("HEAD", url).status_code == 200:
     print("   · vector index already exists")
     sys.exit(0)
 
-response = send("PUT", url, body)
-text = response.text if hasattr(response, "text") else response.content.decode()
-if response.status_code in (200, 201):
-    print(f"   ✓ vector index {index} created")
-    # The index is not queryable the instant it is acknowledged, and the
-    # Knowledge Base fails opaquely if it is created too soon.
-    time.sleep(45)
-elif "resource_already_exists_exception" in text:
-    print("   · vector index already exists")
-else:
+# A data access policy edit is not effective immediately, and the symptom is a
+# bare 403 with no explanation. Retry rather than fail on the first one.
+ATTEMPTS = 6
+for attempt in range(1, ATTEMPTS + 1):
+    response = send("PUT", url, body)
+    text = body_of(response)
+
+    if response.status_code in (200, 201):
+        print(f"   ✓ vector index {index} created")
+        # Acknowledged is not the same as queryable, and the Knowledge Base
+        # fails opaquely with "no such index" if it is created too soon.
+        time.sleep(45)
+        sys.exit(0)
+
+    if "resource_already_exists_exception" in text:
+        print("   · vector index already exists")
+        sys.exit(0)
+
+    if response.status_code == 403 and attempt < ATTEMPTS:
+        print(f"   · 403 from OpenSearch, retrying in 20s "
+              f"({attempt}/{ATTEMPTS - 1}) — data access policy propagating")
+        time.sleep(20)
+        continue
+
     print(f"   ! vector index creation returned {response.status_code}: {text[:300]}")
+    if response.status_code == 403:
+        print("     The signing principal is not in the collection's data access")
+        print("     policy. Check that the policy names the indexer role.")
     sys.exit(1)
 PYEOF
 }
@@ -755,26 +852,120 @@ ensure_gateway() {
     --query 'gatewayUrl' --output text 2>/dev/null)"
   [[ -n "$url" && "$url" != "None" ]] && { save gateway_url "$url"; ok "$url"; }
 
+  # A target that already exists is not an error, so check first rather than
+  # reading "already exists" as a failure.
+  local existing_targets
+  existing_targets="$(aws bedrock-agentcore-control list-gateway-targets \
+    --gateway-identifier "$gw" --region "$REGION" \
+    --query 'items[].name' --output text 2>/dev/null)"
+
   # -- Lambda target --------------------------------------------------------
-  local schema; schema="$(cat "$PROJECT_DIR/lambda/lambda_schema")"
-  aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
-    --name "$REFUND_FN" \
-    --target-configuration "{\"mcp\":{\"lambda\":{\"lambdaArn\":\"$(load "${REFUND_FN}_arn")\",\"toolSchema\":{\"inlinePayload\":${schema}}}}}" \
-    --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
-    --region "$REGION" >/dev/null 2>&1 \
-    && ok "target: refund-processor (Lambda)" \
-    || warn "refund-processor target may already exist, or needs the console"
+  if grep -qw "$REFUND_FN" <<<"$existing_targets"; then
+    skip "target refund-processor exists"
+  else
+    local schema out
+    schema="$(cat "$PROJECT_DIR/lambda/lambda_schema")"
+    out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
+      --name "$REFUND_FN" \
+      --target-configuration "{\"mcp\":{\"lambda\":{\"lambdaArn\":\"$(load "${REFUND_FN}_arn")\",\"toolSchema\":{\"inlinePayload\":${schema}}}}}" \
+      --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
+      --region "$REGION" 2>&1)"
+    if grep -q '"targetId"' <<<"$out"; then
+      ok "target: refund-processor (Lambda)"
+    else
+      bad "refund-processor target: $(head -c 220 <<<"$out")"
+    fi
+  fi
 
   # -- API Gateway target ---------------------------------------------------
-  aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
-    --name "$ORDER_FN" \
-    --target-configuration "{\"mcp\":{\"apiGateway\":{\"restApiId\":\"$(load api_id)\",\"stageName\":\"${STAGE}\"}}}" \
-    --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
-    --region "$REGION" >/dev/null 2>&1 \
-    && ok "target: order-tracker (API Gateway)" \
-    || warn "order-tracker target needs the console — see the steps at the end"
+  if grep -qw "$ORDER_FN" <<<"$existing_targets"; then
+    skip "target order-tracker exists"
+  else
+    create_openapi_target "$gw"
+  fi
 
   record "AgentCore Gateway" "OK" "${url:-$gw}"
+}
+
+# The console's "API Gateway REST API stage" target is an OpenAPI target
+# underneath: API Gateway exports the spec, and each method's operationName
+# becomes an operationId, which becomes the MCP tool name. Exporting the spec
+# and registering it directly does the same thing from the CLI.
+create_openapi_target() {
+  local gw="$1"
+  local api url spec
+  api="$(load api_id)"; url="$(load api_url)"
+
+  if ! aws apigateway get-export --rest-api-id "$api" --stage-name "$STAGE" \
+        --export-type oas30 --accepts application/json \
+        --region "$REGION" /tmp/openapi.json >/dev/null 2>&1; then
+    warn "could not export the OpenAPI spec from API Gateway"
+    console_steps_api_target; return 1
+  fi
+
+  # The export has no `servers` block, so the Gateway would not know where to
+  # send the call. Add it, and confirm the three operationIds survived.
+  spec="$(python3 - "$url" <<'PYEOF'
+import json, sys
+spec = json.load(open("/tmp/openapi.json"))
+spec["servers"] = [{"url": sys.argv[1]}]
+ops = [op.get("operationId") for path in spec.get("paths", {}).values()
+       for op in path.values() if isinstance(op, dict)]
+print(json.dumps(spec), file=open("/tmp/openapi-final.json", "w"))
+print(",".join(o for o in ops if o), file=sys.stderr)
+PYEOF
+)" 2>/tmp/ops.txt
+
+  local ops; ops="$(cat /tmp/ops.txt 2>/dev/null)"
+  if [[ -z "$ops" ]]; then
+    warn "the exported spec has no operationIds — the Gateway would expose no tools"
+    console_steps_api_target; return 1
+  fi
+  ok "exported OpenAPI spec, operations: $ops"
+
+  # Two shapes are attempted because the inline payload has a size limit and
+  # the S3 form is the documented route for anything larger. Both errors are
+  # printed if both fail, so the next attempt is informed.
+  local out
+  out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
+    --name "$ORDER_FN" \
+    --target-configuration "{\"mcp\":{\"openApiSchema\":{\"inlinePayload\":$(jq -Rs . < /tmp/openapi-final.json)}}}" \
+    --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
+    --region "$REGION" 2>&1)"
+  if grep -q '"targetId"' <<<"$out"; then
+    ok "target: order-tracker (OpenAPI, inline)"; return 0
+  fi
+  warn "inline OpenAPI target failed: $(head -c 200 <<<"$out")"
+
+  local bucket; bucket="$(load bucket)"
+  aws s3 cp /tmp/openapi-final.json "s3://${bucket}/openapi.json" --region "$REGION" >/dev/null 2>&1
+  out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
+    --name "$ORDER_FN" \
+    --target-configuration "{\"mcp\":{\"openApiSchema\":{\"s3\":{\"uri\":\"s3://${bucket}/openapi.json\"}}}}" \
+    --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
+    --region "$REGION" 2>&1)"
+  if grep -q '"targetId"' <<<"$out"; then
+    ok "target: order-tracker (OpenAPI, from S3)"; return 0
+  fi
+  warn "S3 OpenAPI target failed: $(head -c 200 <<<"$out")"
+
+  console_steps_api_target
+  return 1
+}
+
+console_steps_api_target() {
+  cat <<EOF
+
+   ${BOLD}Add the order-tracker target in the console (about a minute):${RESET}
+     Bedrock → AgentCore → Gateways → $GATEWAY_NAME → Add target
+       Target name  order-tracker
+       Target type  API Gateway REST API stage
+       REST API     $API_NAME  ($(load api_id))
+       Stage        $STAGE
+       Operations   get_order, get_customer, get_customer_orders
+     Then re-run:  bash \$0
+
+EOF
 }
 
 console_steps_gateway() {
@@ -971,7 +1162,7 @@ EOF
 show_status() {
   printf '\n%sRecorded state%s\n\n' "$BOLD" "$RESET"
   local key
-  for key in account caller_arn lambda_role_arn kb_role_arn gw_role_arn \
+  for key in account caller_arn lambda_role_arn kb_role_arn gw_role_arn indexer_role_arn \
              "${ORDER_FN}_arn" "${REFUND_FN}_arn" api_id api_url bucket \
              collection_arn collection_endpoint kb_id ds_id memory_id \
              gateway_id gateway_url agent_deployed; do
@@ -1035,7 +1226,8 @@ teardown() {
     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole >/dev/null 2>&1
   aws iam delete-role-policy --role-name "$KB_ROLE" --policy-name kb-access >/dev/null 2>&1
   aws iam delete-role-policy --role-name "$GW_ROLE" --policy-name gateway-invoke >/dev/null 2>&1
-  for role in "$LAMBDA_ROLE" "$KB_ROLE" "$GW_ROLE"; do
+  aws iam delete-role-policy --role-name "${PREFIX}-indexer" --policy-name aoss-index >/dev/null 2>&1
+  for role in "$LAMBDA_ROLE" "$KB_ROLE" "$GW_ROLE" "${PREFIX}-indexer"; do
     aws iam delete-role --role-name "$role" >/dev/null 2>&1 && ok "$role deleted"
   done
 
