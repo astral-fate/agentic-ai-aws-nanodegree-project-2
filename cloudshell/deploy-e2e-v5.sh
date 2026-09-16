@@ -63,7 +63,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v4"
+SCRIPT_VERSION="v5"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -1607,14 +1607,20 @@ ensure_indexer_user() {
   arn="$(aws iam get-user --user-name "$name" --query User.Arn --output text 2>/dev/null)"
   if [[ -z "$arn" || "$arn" == "None" ]]; then
     arn="$(aws iam create-user --user-name "$name" --query User.Arn --output text 2>/dev/null)"
-    # stdout is redirected, not just stderr: this function's stdout IS the
-    # returned ARN, so anything else printed would be concatenated onto it.
-    [[ -n "$arn" && "$arn" != "None" ]] && \
-      aws iam put-user-policy --user-name "$name" --policy-name aoss-index \
-        --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["aoss:APIAccessAll"],"Resource":"*"}]}' \
-        >/dev/null 2>&1
     sleep 10
   fi
+
+  # Attached unconditionally, not only on creation. A user left over from an
+  # earlier run whose policy call failed would otherwise look fine here and
+  # then 403 at the index request, with nothing to distinguish it from a data
+  # access policy problem.
+  #
+  # stdout is redirected, not just stderr: this function's stdout IS the
+  # returned ARN, so anything else printed would be concatenated onto it.
+  [[ -n "$arn" && "$arn" != "None" ]] && \
+    aws iam put-user-policy --user-name "$name" --policy-name aoss-index \
+      --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["aoss:APIAccessAll"],"Resource":"*"}]}' \
+      >/dev/null 2>&1
 
   save indexer_user_arn "$arn"
   printf '%s' "$arn"
@@ -1664,6 +1670,7 @@ create_vector_index() {
     AWS_ACCESS_KEY_ID="$access" \
     AWS_SECRET_ACCESS_KEY="$secret" \
   python3 - "$endpoint" "$INDEX_NAME" "$VECTOR_FIELD" "$EMBED_DIM" "$REGION" <<'PYEOF'
+import hashlib
 import json, sys, time
 import botocore.session
 from botocore.auth import SigV4Auth
@@ -1705,8 +1712,28 @@ if creds.token:
     print("   ! a session token is present alongside the key; this will 403")
 
 def send(method, url, body=None):
-    request = AWSRequest(method=method, url=url, data=body,
-                         headers={"Content-Type": "application/json"})
+    """
+    Sign and send one request to the collection.
+
+    OpenSearch Serverless requires an explicit x-amz-content-sha256 header.
+    botocore's plain SigV4Auth computes the payload hash for the canonical
+    request but only *emits* that header for the S3 signers, so an aoss
+    request signed with it is rejected — with a bare 403 that looks exactly
+    like a permissions problem, which is what sent the last three rounds of
+    this chasing identities and policies. opensearch-py's own AWSV4SignerAuth
+    sets the same header for the aoss service.
+    """
+    payload = body.encode("utf-8") if isinstance(body, str) else (body or b"")
+
+    request = AWSRequest(
+        method=method,
+        url=url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Amz-Content-SHA256": hashlib.sha256(payload).hexdigest(),
+        },
+    )
     SigV4Auth(creds, "aoss", region).add_auth(request)
     return URLLib3Session().send(request.prepare())
 
