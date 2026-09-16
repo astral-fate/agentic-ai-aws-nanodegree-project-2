@@ -1,0 +1,10 @@
+Deployed resources — account <account-id>, us-east-1
+
+  REST API        https://e5xvrt2660.execute-api.us-east-1.amazonaws.com/prod
+  Knowledge Base  QVNFXUYT22
+  Memory          CustomerSupportMemory-Ooha38CZ5i
+  Gateway         https://customersupportgateway-mnlaswn5jp.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
+  Collection      arn:aws:aoss:us-east-1:<account-id>:collection/n26sv43284j803168y5g
+  S3 bucket       cs-agent-kb-<account-id>
+
+Generated 2026-09-16T14:53:56Z by deploy-e2e v17

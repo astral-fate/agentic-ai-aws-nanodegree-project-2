@@ -1,14 +1,31 @@
-# Console screenshots
+# Console screenshots — live AWS
 
-Captured by `scripts/capture_console.py`, which drives a real Chrome
-session against the real AWS console. Pages that did not paint are
-reported as BLANK and not listed here.
+Captured by `scripts/capture_console.py`, which signs a headless Chrome
+into the console with `sts:GetFederationToken` and loads each page for
+real. A page whose content pane never painted is reported BLANK and is
+not committed.
 
-| File | Shows | Console location |
-|---|---|---|
-| `03-knowledge-base.png` | Bedrock → Knowledge Bases → CustomerSupportKB, data source synced. | `https://us-east-1.console.aws.amazon.com/bedrock/home?region=us-east-1#/knowledge-bases/QVNFXUYT22` |
-| `05-lambda-functions.png` | Lambda → order-tracker and refund-processor. | `https://us-east-1.console.aws.amazon.com/lambda/home?region=us-east-1#/functions` |
-| `06-api-gateway-resources.png` | API Gateway → cs-agent-order-api: the three GET methods, each carrying the operation name the Gateway exposes as a tool. | `https://us-east-1.console.aws.amazon.com/apigateway/main/apis/e5xvrt2660/resources?api=e5xvrt2660&region=us-east-1#` |
-| `07-opensearch-collection.png` | OpenSearch Serverless → the vector store behind the Knowledge Base. | `https://us-east-1.console.aws.amazon.com/aos/home?region=us-east-1#opensearch/collections` |
-| `08-s3-bucket.png` | S3 → the Knowledge Base source bucket with product_catalog.txt. | `https://us-east-1.console.aws.amazon.com/s3/buckets/cs-agent-kb-212626318772?region=us-east-1&tab=objects` |
-| `09-lambda-cloudwatch-logs.png` | CloudWatch → the order-tracker log group: real invocations, which is stronger evidence than a console test click. | `https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Faws$252Flambda$252Forder-tracker` |
+Account 212626318772 · us-east-1 · signed in as the read-only
+`evidence-capture` IAM user.
+
+| File | Shows |
+|---|---|
+| `03-knowledge-base.png` | Bedrock → Knowledge Bases: CustomerSupportKB, Available, 1 data source |
+| `05-lambda-functions.png` | Lambda → order-tracker and refund-processor |
+| `06-api-gateway-resources.png` | API Gateway → cs-agent-order-api resources |
+| `07-opensearch-collection.png` | OpenSearch Serverless → the vector store |
+| `08-s3-bucket.png` | S3 → product_catalog.txt, the Knowledge Base source |
+| `09-lambda-cloudwatch-logs.png` | CloudWatch → order-tracker invocations |
+
+## Not captured
+
+The three AgentCore console pages — Runtime, Gateways and Memory — are not
+here. Every fragment route tried landed on the AgentCore service overview,
+which is product description rather than evidence of these resources, so
+it was deleted rather than filed as though it showed something.
+
+Those three capabilities are evidenced instead by the live transcripts in
+`../transcripts-live/`, which are stronger: they show the agent actually
+using memory, the gateway and the runtime rather than a list page saying
+they exist.
+

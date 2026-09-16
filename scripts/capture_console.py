@@ -61,7 +61,11 @@ SIGNIN_HOSTS = ("signin.aws.amazon.com", "signin.aws.com")
 # contributes roughly this much text. At or below it, the page body has not
 # painted: a screenshot taken then is a blank frame under a correct-looking
 # header, which is worse than an obvious failure because it looks plausible.
-SHELL_TEXT_CHARS = 700
+# Raised from 700: the Bedrock console's left navigation alone renders
+# ~1000 characters, so a page whose *content pane* never painted still
+# cleared the old bar. Per-target `expect` strings below are the real
+# check; this is just the floor.
+SHELL_TEXT_CHARS = 1200
 
 
 def console(region: str, path: str) -> str:
@@ -124,7 +128,8 @@ def build_targets(region: str, state: dict) -> list[dict]:
             ],
             "note": "Bedrock → AgentCore → Runtime: the deployed agent.",
             "wait": 12000,
-            "attempts": 12,
+            "expect": "customer_support_agent",
+            "attempts": 14,
             "warm_url": console(region, f"bedrock-agentcore/home?region={region}#"),
         },
         {
@@ -133,7 +138,7 @@ def build_targets(region: str, state: dict) -> list[dict]:
             "note": "Bedrock → AgentCore → Gateways: CustomerSupportGateway "
                     "and its two targets (API Gateway + Lambda).",
             "wait": 12000,
-            "expect": "ateway",
+            "expect": "CustomerSupport",
             "attempts": 12,
             "warm_url": console(region, f"bedrock-agentcore/home?region={region}#"),
         },
@@ -147,7 +152,8 @@ def build_targets(region: str, state: dict) -> list[dict]:
             "alt_urls": [console(region, f"bedrock/home?region={region}#/knowledge-bases")],
             "note": "Bedrock → Knowledge Bases → CustomerSupportKB, data source synced.",
             "wait": 12000,
-            "attempts": 12,
+            "expect": "CustomerSupportKB",
+            "attempts": 14,
             "warm_url": console(region, f"bedrock/home?region={region}"),
         },
         {
@@ -155,7 +161,8 @@ def build_targets(region: str, state: dict) -> list[dict]:
             "url": console(region, f"bedrock-agentcore/home?region={region}#/memories"),
             "note": "Bedrock → AgentCore → Memory: both strategies and their namespaces.",
             "wait": 12000,
-            "attempts": 12,
+            "expect": "CustomerSupport",
+            "attempts": 14,
             "warm_url": console(region, f"bedrock-agentcore/home?region={region}#"),
         },
         {
@@ -308,6 +315,29 @@ def load_dotenv(path: Path) -> None:
 
 
 # ── Page helpers ─────────────────────────────────────────────────────────────
+
+def dismiss_overlays(page) -> None:
+    """
+    Close the console's onboarding popover.
+
+    The "Service menu" tooltip renders on top of the content pane and lands in
+    every screenshot taken soon after sign-in. Escape closes it; the explicit
+    close buttons are tried too because the markup varies by page.
+    """
+    try:
+        page.keyboard.press("Escape")
+        for selector in ('button[aria-label="Close"]',
+                         'button[data-testid="close-button"]',
+                         '[class*="awsui_dismiss"] button'):
+            for handle in page.query_selector_all(selector)[:3]:
+                try:
+                    handle.click(timeout=1200)
+                except Exception:  # noqa: BLE001 - best effort only
+                    pass
+        page.wait_for_timeout(600)
+    except Exception:  # noqa: BLE001 - never block a capture on this
+        pass
+
 
 def is_signin(page) -> bool:
     return any(host in page.url for host in SIGNIN_HOSTS)
@@ -466,6 +496,7 @@ def main() -> int:
                     if index + 1 < len(urls):
                         print(f"    blank ({length} chars) — trying the next route")
 
+                dismiss_overlays(page)
                 path = out / f"{name}.png"
                 page.screenshot(path=str(path), full_page=True)
                 size = path.stat().st_size

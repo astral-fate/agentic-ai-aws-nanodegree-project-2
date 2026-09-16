@@ -1,0 +1,22 @@
+====================================================================
+Scenario : 01-order-tracking
+Mode     : LIVE — deployed AgentCore agent, account <account-id>, us-east-1
+When     : 2026-09-16T14:51:11Z
+====================================================================
+
+$ agentcore invoke '{"prompt":"Can you track order ORD-001?","customer_id":"CUST-123","session_id":"t1"}'
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── customer_support_agent ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Session: 27e9e38d-e4f0-4a37-85f8-c51b71600f49                                                                                                                                                                                                                                        │
+│ Request ID: e4ee8a63-4079-4cea-b211-3f16742a9307                                                                                                                                                                                                                                     │
+│ ARN: arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/customer_support_agent-ucTqPm2SrB                                                                                                                                                                                      │
+│ Logs: aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --follow                                                                                                                          │
+│       aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --since 1h                                                                                                                        │
+│ GenAI Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#gen-ai-observability/agent-core                                                                                                                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Invocation failed: An error occurred (RuntimeClientError) when calling the InvokeAgentRuntime operation: Runtime initialization time exceeded. Please make sure that initialization completes in 120s.
+
+--------------------------------------------------------------------
+Expected to contain: SHIPPED,TRK987654321,UPS
+RESULT: [FAIL] missing: SHIPPED TRK987654321 UPS 

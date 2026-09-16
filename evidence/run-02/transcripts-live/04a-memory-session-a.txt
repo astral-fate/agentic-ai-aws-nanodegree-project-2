@@ -1,0 +1,23 @@
+====================================================================
+Scenario : 04a-memory-session-a
+Mode     : LIVE — deployed AgentCore agent, account <account-id>, us-east-1
+When     : 2026-09-16T14:51:22Z
+====================================================================
+
+$ agentcore invoke '{"prompt":"Hi, I am Jane. I prefer concise responses.","customer_id":"CUST-123","session_id":"s-A"}'
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── customer_support_agent ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Session: 27e9e38d-e4f0-4a37-85f8-c51b71600f49                                                                                                                                                                                                                                        │
+│ Request ID: 1a083fa2-c573-4e86-9486-e928216da219                                                                                                                                                                                                                                     │
+│ ARN: arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/customer_support_agent-ucTqPm2SrB                                                                                                                                                                                      │
+│ Logs: aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --follow                                                                                                                          │
+│       aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --since 1h                                                                                                                        │
+│ GenAI Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#gen-ai-observability/agent-core                                                                                                                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Response:
+Hello Jane! I'll keep my responses concise. How can I help you today?
+
+--------------------------------------------------------------------
+Expected to contain: Jane
+RESULT: [PASS]

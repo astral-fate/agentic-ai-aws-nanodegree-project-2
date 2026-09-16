@@ -20,6 +20,56 @@ Five capabilities, five different AgentCore primitives, one entrypoint:
 
 ---
 
+## Architecture
+
+```
+                         agentcore invoke
+                                │
+                                ▼
+                   ┌────────────────────────┐
+                   │  BedrockAgentCoreApp   │   main.py, module level
+                   │   @app.entrypoint      │   async invoke(payload)
+                   └───────────┬────────────┘
+                               │
+              payload: prompt · customer_id · session_id
+                               │
+                   ┌───────────▼────────────┐
+                   │   Strands Agent        │
+                   │   Nova 2 Lite          │
+                   │   hooks=[MemoryHook]   │
+                   └───────────┬────────────┘
+                               │
+     ┌──────────────┬──────────┼───────────────┬────────────────┐
+     ▼              ▼          ▼               ▼                ▼
+┌─────────┐  ┌────────────┐ ┌──────────┐ ┌───────────┐  ┌─────────────┐
+│ Gateway │  │ Knowledge  │ │  Memory  │ │   Code    │  │   Browser   │
+│  (MCP)  │  │    Base    │ │          │ │Interpreter│  │             │
+└────┬────┘  └─────┬──────┘ └────┬─────┘ └─────┬─────┘  └──────┬──────┘
+     │             │             │             │               │
+  ┌──┴──┐      Retrieve     2 namespaces   executeCode    live page
+  │     │       API         per actor      clearContext    fetch
+  ▼     ▼          │             │             │
+┌────┐ ┌────┐  ┌───▼────┐   ┌────▼─────┐  ┌────▼─────┐
+│API │ │λ   │  │OpenSea-│   │SEMANTIC  │  │ sandbox  │
+│GW  │ │dir-│  │rch     │   │USER_PREF │  │ python   │
+│prox│ │ect │  │Server- │   └──────────┘  └──────────┘
+└─┬──┘ └─┬──┘  │less    │
+  │      │     └────┬───┘
+  ▼      ▼          ▼
+order- refund-  product_
+tracker proces- catalog
+   λ    sor λ     .txt
+```
+
+The two Gateway targets are the part worth dwelling on: the same MCP surface
+is fed by two genuinely different mechanisms — an API Gateway REST proxy and a
+direct Lambda invocation — and the agent cannot tell them apart. Both arrive as
+ordinary tools named `order-tracker___get_order` and
+`refund-processor___initiate_refund`. Full write-up in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+---
+
 ## Status
 
 | | |
@@ -29,16 +79,17 @@ Five capabilities, five different AgentCore primitives, one entrypoint:
 | Lambda handlers | ✅ real, unmodified code executes in every transcript |
 | Discount arithmetic | ✅ the generated program is really executed, in a subprocess |
 | Browser | ✅ real HTTP fetch, labelled `live-fetch` in the transcript |
-| AWS deployment | ⏳ not yet run — blocked on credentials, see below |
-| Evidence | [`evidence/run-01/`](evidence/run-01/) |
+| AWS deployment | ✅ deployed to Bedrock AgentCore in `us-east-1` |
+| Live scenarios | **5/7 passing** — two real tool-selection failures, [analysed below](#deployed-on-aws--and-what-the-live-run-found) |
+| Evidence | [`run-01`](evidence/run-01/) offline · [`run-02`](evidence/run-02/) live |
 
-> **Read this before citing the evidence.** The transcripts come from an
-> **offline harness**, not a deployed agent. The Lambda handlers and the
-> discount program really run; tool *routing* is a rule-based planner rather
-> than Nova 2 Lite. So the evidence shows **the wiring is correct**, not
-> **the model behaves**. That line is drawn precisely in
-> [`docs/TESTING.md`](docs/TESTING.md), and the live procedure that closes the
-> gap is [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §B.
+> **Two evidence runs, and they measure different things.**
+> [`run-01`](evidence/run-01/) is the **offline harness**: the Lambda handlers
+> and the discount program really execute, but tool *routing* is a rule-based
+> planner, so it proves **the wiring is correct** and nothing about the model.
+> [`run-02`](evidence/run-02/) is the **deployed agent on AWS**, which is where
+> model behaviour shows up — and where two of the seven scenarios failed.
+> The boundary is drawn in [`docs/TESTING.md`](docs/TESTING.md).
 
 **Grading each rubric line against the evidence:** [`SUBMISSION.md`](SUBMISSION.md).
 
@@ -101,15 +152,91 @@ retrieval miss behind fluent prose.
 
 <sub>🔍 [Open full size](evidence/run-01/screenshots/03-knowledge-base-rag.png) &nbsp;·&nbsp; text: [`03-knowledge-base-rag.txt`](evidence/run-01/transcripts/03-knowledge-base-rag.txt)</sub>
 
-### The rest
+### Test 1 — order tracking
 
-| | | |
-|---|---|---|
-| [Test 1 — Order tracking](evidence/run-01/screenshots/01-order-tracking.png) | Gateway, API target | SHIPPED · TRK987654321 · UPS |
-| [Test 6 — Browser](evidence/run-01/screenshots/06-browser-tool.png) | AgentCore Browser | a real HTTP fetch, labelled `live-fetch` |
-| [Offline test suite](evidence/run-01/screenshots/07-offline-test-suite.png) | 99 tests | ~6 seconds, no AWS |
+[![Order tracking](evidence/run-01/screenshots/01-order-tracking.png)](evidence/run-01/screenshots/01-order-tracking.png)
+
+### Test 6 — the browser tool
+
+[![Browser tool](evidence/run-01/screenshots/06-browser-tool.png)](evidence/run-01/screenshots/06-browser-tool.png)
+
+### The offline suite
+
+[![Offline test suite](evidence/run-01/screenshots/07-offline-test-suite.png)](evidence/run-01/screenshots/07-offline-test-suite.png)
 
 Full index with every artefact: [`evidence/run-01/INDEX.md`](evidence/run-01/INDEX.md).
+
+---
+
+## Deployed on AWS — and what the live run found
+
+The agent was deployed to Bedrock AgentCore in `us-east-1` and the six
+scenarios were run against it with `agentcore invoke`. **5 of 7 passed.**
+
+| Scenario | Result | |
+|---|---|---|
+| [Knowledge Base RAG](evidence/run-02/transcripts-live/03-knowledge-base-rag.txt) | ✅ | tier benefits retrieved from the synced catalog |
+| [Memory, session A](evidence/run-02/transcripts-live/04a-memory-session-a.txt) | ✅ | stores the name and preference |
+| [Memory, session B](evidence/run-02/transcripts-live/04b-memory-session-b.txt) | ✅ | **cross-session recall, live** |
+| [Loyalty discount](evidence/run-02/transcripts-live/05-loyalty-discount.txt) | ✅ | computed in the sandbox |
+| [Browser](evidence/run-02/transcripts-live/06-browser-tool.txt) | ✅ | live page title |
+| [Order tracking](evidence/run-02/transcripts-live/01-order-tracking.txt) | ❌ | answered **without calling `get_order`** |
+| [Refund](evidence/run-02/transcripts-live/02-refund-processing.txt) | ❌ | approved — **for $0** |
+
+The two failures are the most useful thing in this repository, because they are
+exactly what [`docs/TESTING.md`](docs/TESTING.md) said the offline harness
+could not answer, written down before the live run happened:
+
+> *Does it look up the order total before calling `initiate_refund`, or pass a
+> number it inferred from the product name?*
+
+It does not. Asked to track `ORD-001` — a `SHIPPED` order with tracking
+`TRK987654321` — Nova 2 Lite replied that it *"is being processed and is
+expected to be completed in 2-3 business days"*, with no tool call at all. On
+the refund it skipped the order lookup, so no amount reached the Lambda and
+`event.get("amount", 0)` issued the refund for **$0**.
+
+The wiring is right and the offline suite has asserted the correct ordering
+since the first commit (`test_refund_amount_comes_from_the_order_lookup`). The
+model does not reliably use it. That gap is the whole argument for running
+both suites.
+
+Full analysis: [`evidence/run-02/INDEX.md`](evidence/run-02/INDEX.md).
+
+### Console screenshots
+
+Captured by [`scripts/capture_console.py`](scripts/capture_console.py), which
+signs a headless Chrome into the console with `sts:GetFederationToken` and
+loads each page for real. A page whose content pane never painted is reported
+`BLANK` and **not** committed.
+
+**Bedrock → Knowledge Bases** — `CustomerSupportKB`, Available, 1 data source
+
+[![Knowledge Base](evidence/run-02/screenshots/03-knowledge-base.png)](evidence/run-02/screenshots/03-knowledge-base.png)
+
+**Lambda** — both functions behind the Gateway, deployed unmodified from
+[`project/starter/lambda/`](project/starter/lambda/)
+
+[![Lambda functions](evidence/run-02/screenshots/05-lambda-functions.png)](evidence/run-02/screenshots/05-lambda-functions.png)
+
+**API Gateway** — each GET carries the operation name that becomes an MCP tool
+
+[![API Gateway resources](evidence/run-02/screenshots/06-api-gateway-resources.png)](evidence/run-02/screenshots/06-api-gateway-resources.png)
+
+**OpenSearch Serverless** — the vector store behind the Knowledge Base
+
+[![OpenSearch collection](evidence/run-02/screenshots/07-opensearch-collection.png)](evidence/run-02/screenshots/07-opensearch-collection.png)
+
+**S3** — `product_catalog.txt`, the Knowledge Base source
+
+[![S3 bucket](evidence/run-02/screenshots/08-s3-bucket.png)](evidence/run-02/screenshots/08-s3-bucket.png)
+
+**CloudWatch** — real `order-tracker` invocations, stronger evidence than a
+console test click
+
+[![CloudWatch logs](evidence/run-02/screenshots/09-lambda-cloudwatch-logs.png)](evidence/run-02/screenshots/09-lambda-cloudwatch-logs.png)
+
+Full index: [`evidence/run-02/screenshots/README.md`](evidence/run-02/screenshots/README.md).
 
 ---
 

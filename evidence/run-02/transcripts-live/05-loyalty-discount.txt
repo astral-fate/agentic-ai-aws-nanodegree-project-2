@@ -1,0 +1,31 @@
+====================================================================
+Scenario : 05-loyalty-discount
+Mode     : LIVE — deployed AgentCore agent, account <account-id>, us-east-1
+When     : 2026-09-16T14:53:31Z
+====================================================================
+
+$ agentcore invoke '{"prompt":"I am a Gold member with 4250 points. Calculate my discount on a $150 standard order.","customer_id":"CUST-123","session_id":"t5"}'
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── customer_support_agent ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Session: 27e9e38d-e4f0-4a37-85f8-c51b71600f49                                                                                                                                                                                                                                        │
+│ Request ID: 32f4713b-16c4-4593-b935-a093d5ec5e3f                                                                                                                                                                                                                                     │
+│ ARN: arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/customer_support_agent-ucTqPm2SrB                                                                                                                                                                                      │
+│ Logs: aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --follow                                                                                                                          │
+│       aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --since 1h                                                                                                                        │
+│ GenAI Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#gen-ai-observability/agent-core                                                                                                                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Response:
+Hi Jane, here's your Gold member discount on the $150 standard order:
+
+- **Final total**: $99.00  
+- **Total savings**: $51.00  
+- **Points used**: 4,000 (worth $40)  
+- **Remaining points**: 349  
+- **New points earned**: 99  
+
+Your order will now total **$99.00** after applying both your points redemption and Gold tier discount.
+
+--------------------------------------------------------------------
+Expected to contain: 99,349
+RESULT: [PASS]

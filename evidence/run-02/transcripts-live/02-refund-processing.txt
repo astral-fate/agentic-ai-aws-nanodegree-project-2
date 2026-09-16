@@ -1,0 +1,30 @@
+====================================================================
+Scenario : 02-refund-processing
+Mode     : LIVE — deployed AgentCore agent, account <account-id>, us-east-1
+When     : 2026-09-16T14:51:16Z
+====================================================================
+
+$ agentcore invoke '{"prompt":"I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund.","customer_id":"CUST-123","session_id":"t2"}'
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── customer_support_agent ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Session: 27e9e38d-e4f0-4a37-85f8-c51b71600f49                                                                                                                                                                                                                                        │
+│ Request ID: fe462ae4-9e43-4bde-952a-3353000c305a                                                                                                                                                                                                                                     │
+│ ARN: arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/customer_support_agent-ucTqPm2SrB                                                                                                                                                                                      │
+│ Logs: aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --follow                                                                                                                          │
+│       aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --since 1h                                                                                                                        │
+│ GenAI Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#gen-ai-observability/agent-core                                                                                                                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Response:
+Your refund for order ORD-002 (Kindle Paperwhite) has been successfully initiated!
+
+- **Refund ID:** REF-2JF4Q5Z8
+- **Status:** APPROVED
+- **Refund Amount:** $0 (full refund)
+- **Credit will appear:** In 3-5 business days
+
+The refund has been processed and you should see the credit reflected in your account within the next few business days. If you have any questions about the refund timeline or need a return shipping label, just let me know!
+
+--------------------------------------------------------------------
+Expected to contain: APPROVED,3-5 business days,139.99
+RESULT: [FAIL] missing: 139.99 

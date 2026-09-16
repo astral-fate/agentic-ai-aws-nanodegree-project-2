@@ -1,0 +1,23 @@
+====================================================================
+Scenario : 04b-memory-session-b
+Mode     : LIVE — deployed AgentCore agent, account <account-id>, us-east-1
+When     : 2026-09-16T14:53:25Z
+====================================================================
+
+$ agentcore invoke '{"prompt":"Do you remember my name and communication preference?","customer_id":"CUST-123","session_id":"s-B"}'
+
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── customer_support_agent ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Session: 27e9e38d-e4f0-4a37-85f8-c51b71600f49                                                                                                                                                                                                                                        │
+│ Request ID: 3bb75575-e1c7-4541-82a2-7d98acbbc254                                                                                                                                                                                                                                     │
+│ ARN: arn:aws:bedrock-agentcore:us-east-1:<account-id>:runtime/customer_support_agent-ucTqPm2SrB                                                                                                                                                                                      │
+│ Logs: aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --follow                                                                                                                          │
+│       aws logs tail /aws/bedrock-agentcore/runtimes/customer_support_agent-ucTqPm2SrB-DEFAULT --log-stream-name-prefix "2026/09/16/[runtime-logs]" --since 1h                                                                                                                        │
+│ GenAI Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#gen-ai-observability/agent-core                                                                                                                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Response:
+Yes Jane, I remember your name and that you prefer concise responses. I've processed your return and refund for the Kindle Paperwhite (Order ORD-002). Your refund ID is REF-2JF4Q5Z8 for a full amount of $0, expected in 3-5 business days.
+
+--------------------------------------------------------------------
+Expected to contain: Jane,concise
+RESULT: [PASS]
