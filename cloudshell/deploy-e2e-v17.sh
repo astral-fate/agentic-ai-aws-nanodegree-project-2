@@ -9,6 +9,8 @@
 #     bash deploy-e2e.sh --status     show what exists, change nothing
 #     bash deploy-e2e.sh --test-only  re-run the 6 tests against what is there
 #     bash deploy-e2e.sh --package    zip main.py + transcripts for submission
+#
+#  KEEP_MEMORY=1 skips the memory reset before the scenarios.
 #     bash deploy-e2e.sh --teardown   delete everything it created
 #
 #  ─────────────────────────────────────────────────────────────────────
@@ -64,7 +66,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v16"
+SCRIPT_VERSION="v17"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -2571,8 +2573,59 @@ EOF
 # ═════════════════════════════════════════════════════════════════════════════
 #  11. The six tests
 # ═════════════════════════════════════════════════════════════════════════════
+# Clear what earlier runs stored about the test customer.
+#
+# Every scenario uses customer_id CUST-123, and memory is keyed on the actor,
+# so records accumulate across runs. After enough of them the injected
+# "Customer Context:" block grows large enough that the model answers from it
+# instead of calling a tool: a run asking "track order ORD-001" came back
+# describing an ORD-002 refund and a loyalty balance, both recalled from
+# previous scenarios rather than looked up.
+#
+# That is a real property of the agent worth knowing about, but it makes the
+# six scenarios measure history rather than behaviour. Each run starts clean.
+reset_memory() {
+  local mem="$1"
+  [[ -z "$mem" ]] && return 0
+
+  local deleted=0 namespace record
+  for namespace in "cs_agent/CUST-123/facts" "cs_agent/CUST-123/preferences"; do
+    for record in $(aws bedrock-agentcore list-memory-records \
+                      --memory-id "$mem" --namespace "$namespace" \
+                      --region "$REGION" --max-results 100 \
+                      --query 'memoryRecordSummaries[].memoryRecordId' \
+                      --output text 2>/dev/null); do
+      aws bedrock-agentcore delete-memory-record --memory-id "$mem" \
+        --memory-record-id "$record" --region "$REGION" >/dev/null 2>&1 \
+        && deleted=$((deleted + 1))
+    done
+  done
+
+  # Events are what extraction runs over, so leaving them would let the same
+  # records reappear. The session IDs are the ones these scenarios use.
+  local session event
+  for session in t1 t2 t3 s-A s-B t5 t6 probe; do
+    for event in $(aws bedrock-agentcore list-events --memory-id "$mem" \
+                     --actor-id CUST-123 --session-id "$session" \
+                     --region "$REGION" --max-results 100 \
+                     --query 'events[].eventId' --output text 2>/dev/null); do
+      aws bedrock-agentcore delete-event --memory-id "$mem" \
+        --actor-id CUST-123 --session-id "$session" --event-id "$event" \
+        --region "$REGION" >/dev/null 2>&1 && deleted=$((deleted + 1))
+    done
+  done
+
+  if [[ "$deleted" -gt 0 ]]; then
+    ok "cleared $deleted memory item(s) from earlier runs"
+  else
+    skip "no earlier memory to clear"
+  fi
+}
+
 run_tests() {
   phase "The six project test scenarios"
+
+  [[ -z "${KEEP_MEMORY:-}" ]] && reset_memory "$(load memory_id)"
 
   mkdir -p "$EVIDENCE_DIR"
   local pass=0 fail=0
