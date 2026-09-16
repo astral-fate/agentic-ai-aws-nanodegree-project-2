@@ -64,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v14"
+SCRIPT_VERSION="v15"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -1260,6 +1260,90 @@ install_agentcore_cli() {
   return 1
 }
 
+# Write the real resource IDs into the deployed copy of main.py.
+#
+# main.py reads each value from the environment and falls back to a placeholder
+# literal. Sourcing .env in CloudShell sets those variables for the *build*,
+# not inside the container the agent runs in, so the deployed agent fell back
+# to the placeholders and asked AgentCore for
+# memory/CustomerSupportMemory-abc123defg — a memory that does not exist.
+#
+# $PROJECT_DIR/main.py is a generated artifact, rewritten from the embedded
+# copy on every run, so substituting real values there changes nothing in the
+# repository. It also means the main.py inside the submission zip shows the
+# configuration actually used, which is what the rubric asks to see.
+configure_main_py() {
+  local target="$PROJECT_DIR/main.py"
+
+  python3 - "$target" "$(load gateway_url)" "$(load kb_id)" "$REGION" "$(load memory_id)" <<'PYEOF'
+import sys
+
+path, gateway_url, kb_id, region, memory_id = sys.argv[1:6]
+source = open(path, encoding="utf-8").read()
+
+placeholders = {
+    "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp": gateway_url,
+    "ABCDEFGHIJ": kb_id,
+    "CustomerSupportMemory-abc123defg": memory_id,
+}
+
+missing = []
+for placeholder, value in placeholders.items():
+    if not value:
+        missing.append(placeholder)
+        continue
+    if placeholder not in source:
+        print(f"   ! placeholder not found, not substituted: {placeholder[:40]}")
+        continue
+    source = source.replace(placeholder, value)
+
+open(path, "w", encoding="utf-8").write(source)
+
+if missing:
+    print(f"   ! {len(missing)} value(s) unknown — the agent will use placeholders")
+    sys.exit(1)
+
+print(f"   ✓ main.py configured: KB={kb_id}, memory={memory_id}")
+PYEOF
+}
+
+# Grant the AgentCore runtime role what the agent actually calls.
+#
+# The starter toolkit creates AmazonBedrockAgentCoreSDKRuntime-* with enough
+# permission to start a container and nothing else. The agent then calls
+# GetMemory, the Gateway, the Knowledge Base's Retrieve API, the code
+# interpreter and the browser, and the first of those failed with
+# AccessDeniedException.
+grant_runtime_permissions() {
+  local role
+  role="$(aws iam list-roles \
+    --query "Roles[?starts_with(RoleName,'AmazonBedrockAgentCoreSDKRuntime')].RoleName | [0]" \
+    --output text 2>/dev/null)"
+
+  if [[ -z "$role" || "$role" == "None" ]]; then
+    warn "no AgentCore runtime role found yet — it is created by the first deploy"
+    return 0
+  fi
+
+  # Scoped to the services this agent uses, not to "*:*". Broad within
+  # bedrock-agentcore because memory, gateway, browser and code interpreter
+  # are four different resource types under one service prefix.
+  aws iam put-role-policy --role-name "$role" --policy-name "${PREFIX}-agent-access" \
+    --policy-document '{
+      "Version": "2012-10-17",
+      "Statement": [
+        {"Effect": "Allow",
+         "Action": ["bedrock-agentcore:*"],
+         "Resource": "*"},
+        {"Effect": "Allow",
+         "Action": ["bedrock:Retrieve", "bedrock:RetrieveAndGenerate",
+                    "bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+         "Resource": "*"}
+      ]}' >/dev/null 2>&1 \
+    && ok "granted memory, gateway and Bedrock access to $role" \
+    || warn "could not update $role — the agent may hit AccessDenied"
+}
+
 # Build requirements.txt from the starter's own pyproject.toml.
 #
 # It was hand-written before, and it omitted playwright. main.py imports
@@ -1347,6 +1431,8 @@ EOF
   ok "wrote $PROJECT_DIR/.env"
 
   write_requirements || return 1
+  configure_main_py || return 1
+  grant_runtime_permissions
 
   install_agentcore_cli || return 1
 
