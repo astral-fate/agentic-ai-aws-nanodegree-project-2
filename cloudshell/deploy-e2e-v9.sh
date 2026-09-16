@@ -64,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v8"
+SCRIPT_VERSION="v9"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -2260,20 +2260,35 @@ EOF
 
   install_agentcore_cli || return 1
 
-  # </dev/null so an unexpected prompt gets EOF instead of hanging the run,
-  # and the log is printed on failure rather than discarded.
-  if ( cd "$PROJECT_DIR" && source .env \
-         && agentcore configure --entrypoint main.py --name "$AGENT_NAME" \
-         </dev/null >/tmp/configure.log 2>&1 ); then
-    ok "agentcore configure"
+  # `agentcore configure` is interactive — it prompts to confirm the detected
+  # requirements file. /dev/null gave it EOF and it aborted ("Input is not a
+  # terminal"), so feed it newlines instead: `yes ''` accepts the default for
+  # that prompt and any other it adds later.
+  #
+  # Its options are recorded first, so if this still fails the log says what
+  # flags exist rather than costing another round trip to find out.
+  ( cd "$PROJECT_DIR" && agentcore configure --help ) >/tmp/configure-help.log 2>&1 || true
+
+  rm -f "$PROJECT_DIR/.bedrock_agentcore.yaml"
+  ( cd "$PROJECT_DIR" && source .env \
+      && yes '' | agentcore configure --entrypoint main.py --name "$AGENT_NAME" \
+      >/tmp/configure.log 2>&1 ) || true
+
+  # Judged by the artifact, not the exit code: `yes` is killed by SIGPIPE when
+  # the prompt closes, and under `set -o pipefail` that makes a successful
+  # pipeline look like a failure.
+  if [[ -f "$PROJECT_DIR/.bedrock_agentcore.yaml" ]]; then
+    ok "agentcore configure — wrote .bedrock_agentcore.yaml"
   else
-    bad "agentcore configure failed:"
-    tail -15 /tmp/configure.log | sed 's/^/       /'
+    bad "agentcore configure did not produce .bedrock_agentcore.yaml:"
+    tail -18 /tmp/configure.log | sed 's/^/       /'
+    printf '\n       %sAvailable options:%s\n' "$BOLD" "$RESET"
+    grep -E '^\s+(-|--)' /tmp/configure-help.log | head -20 | sed 's/^/       /'
     return 1
   fi
 
   printf '   %s⋯%s agentcore deploy (this takes several minutes) ' "$DIM" "$RESET"
-  if ( cd "$PROJECT_DIR" && source .env && agentcore deploy >/tmp/deploy.log 2>&1 ); then
+  if ( cd "$PROJECT_DIR" && source .env && yes '' | agentcore deploy >/tmp/deploy.log 2>&1 ); then
     printf '%s✓%s\n' "$GREEN" "$RESET"
     save agent_deployed 1
     record "Agent deploy" "OK" "$AGENT_NAME"
@@ -2390,6 +2405,13 @@ package_submission() {
 
   ( cd "$staging" && zip -qr "$out" . )
 
+  local n
+  n="$(ls "$EVIDENCE_DIR"/*.txt 2>/dev/null | wc -l)"
+  if [[ "$n" -eq 0 ]]; then
+    warn "no test transcripts yet — the agent has not been deployed and run"
+    warn "this archive has main.py and the Lambdas, but nothing to submit as"
+    warn "test output. Get phase 11 green, then re-run with --package."
+  fi
   ok "$out ($(du -h "$out" | cut -f1))"
   printf '\n   %sDownload it:%s CloudShell → Actions → Download file → paste:\n' "$BOLD" "$RESET"
   printf '     %s\n\n' "$out"

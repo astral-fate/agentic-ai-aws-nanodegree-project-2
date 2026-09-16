@@ -44,12 +44,12 @@ Everything else fails confusingly without this, so do it first.
 
 ### 2a. The one-command path
 
-`cloudshell/deploy-e2e-v8.sh` is self-contained — `main.py`, both Lambda handlers,
+`cloudshell/deploy-e2e-v9.sh` is self-contained — `main.py`, both Lambda handlers,
 the tool schema and the catalog are all embedded in it. Open **AWS CloudShell**
 in `us-east-1` and paste:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/astral-fate/agentic-ai-aws-nanodegree-project-2/main/cloudshell/deploy-e2e-v8.sh -o deploy-e2e-v8.sh && bash deploy-e2e-v8.sh
+curl -sSL https://raw.githubusercontent.com/astral-fate/agentic-ai-aws-nanodegree-project-2/main/cloudshell/deploy-e2e-v9.sh -o deploy-e2e-v9.sh && bash deploy-e2e-v9.sh
 ```
 
 It does everything in §2b–§5 below, including the OpenSearch collection, the
@@ -60,9 +60,9 @@ If it completes, skip to §6 (tear down). If a step fails it prints the console
 steps for that piece and carries on, and the summary table says what worked.
 
 ```bash
-bash deploy-e2e-v8.sh --status      # what exists
-bash deploy-e2e-v8.sh --test-only   # re-run the six tests
-bash deploy-e2e-v8.sh --teardown    # delete everything, OpenSearch first
+bash deploy-e2e-v9.sh --status      # what exists
+bash deploy-e2e-v9.sh --test-only   # re-run the six tests
+bash deploy-e2e-v9.sh --teardown    # delete everything, OpenSearch first
 ```
 
 State lives in `~/.cs-agent-state/`, so a dropped CloudShell session costs only
