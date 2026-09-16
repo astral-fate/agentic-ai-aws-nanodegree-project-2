@@ -1,0 +1,34 @@
+====================================================================================
+Test 1 — Order Tracking
+Capability under test : Gateway (API Gateway target)
+Mode                  : offline harness (no AWS account)
+Timestamp             : 2026-09-16T09:48:54+00:00
+====================================================================================
+
+$ agentcore invoke '{"prompt": "Can you track order ORD-001?", "customer_id": "CUST-123", "session_id": "t1"}'
+
+[gateway] connected, 6 MCP tools loaded:
+            order-tracker___get_order
+            order-tracker___get_customer_orders
+            order-tracker___get_customer
+            refund-processor___initiate_refund
+            refund-processor___check_refund_status
+            refund-processor___get_return_label
+
+[memory]  queried 2 namespace(s), 0 memories returned
+
+[tool]    order-tracker___get_order
+            args   {"order_id": "ORD-001"}
+            result {"order_id": "ORD-001", "customer_id": "CUST-123", "status": "SHIPPED", "items": [{"name": "Wireless Headphones Pro", "qty": 1, "price": 89.99}], "total": 89.99, "tracking_number": "TRK987654321", "carrier": "UPS", "estimated_delivery": "2026-09-18"}
+
+[memory]  create_event evt-0001 actor=CUST-123 session=t1 → 0 memory record(s) extracted
+
+------------------------------------------------------------------------------------
+AGENT REPLY
+------------------------------------------------------------------------------------
+Order ORD-001 (1× Wireless Headphones Pro, $89.99) is SHIPPED. It's with UPS under tracking number TRK987654321. Estimated delivery is 2026-09-18.
+
+------------------------------------------------------------------------------------
+Expected: shipping status, tracking number TRK987654321, carrier UPS, estimated delivery date
+RESULT:   [PASS] every expected element is present
+------------------------------------------------------------------------------------

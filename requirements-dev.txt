@@ -1,0 +1,3 @@
+# Offline test suite. Needs no AWS account and no network.
+pytest>=8.0
+boto3>=1.34          # only for the client patched by harness/fakes.py

@@ -1,0 +1,39 @@
+====================================================================================
+Test 4b — Long-Term Memory, session B (recall)
+Capability under test : AgentCore Memory
+Mode                  : offline harness (no AWS account)
+Timestamp             : 2026-09-16T09:48:54+00:00
+====================================================================================
+
+$ agentcore invoke '{"prompt": "Do you remember my name and communication preference?", "customer_id": "CUST-123", "session_id": "s-B"}'
+
+[gateway] connected, 6 MCP tools loaded:
+            order-tracker___get_order
+            order-tracker___get_customer_orders
+            order-tracker___get_customer
+            refund-processor___initiate_refund
+            refund-processor___check_refund_status
+            refund-processor___get_return_label
+
+[memory]  queried 2 namespace(s), 2 memories returned
+            cs_agent/CUST-123/facts → The customer's name is Jane.
+            cs_agent/CUST-123/preferences → The customer prefers concise responses (communication preference).
+
+[memory]  context injected into the user message:
+            Customer Context:
+            - [SEMANTIC] The customer's name is Jane.
+            - [USER_PREFERENCE] The customer prefers concise responses (communication preference).
+            
+            Do you remember my name and communication preference?
+
+[memory]  create_event evt-0005 actor=CUST-123 session=s-B → 0 memory record(s) extracted
+
+------------------------------------------------------------------------------------
+AGENT REPLY
+------------------------------------------------------------------------------------
+Of course, yes — you're Jane, and you prefer concise responses. I'll keep it brief. What can I help you with?
+
+------------------------------------------------------------------------------------
+Expected: agent recalls "Jane" and the preference for concise responses
+RESULT:   [PASS] every expected element is present
+------------------------------------------------------------------------------------

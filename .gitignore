@@ -1,0 +1,33 @@
+# Credentials and account-specific config — never commit
+.env
+.env.local
+*.pem
+.aws/
+
+# AgentCore deployment config, written by `agentcore configure`.
+# Contains account IDs and ECR URIs.
+.bedrock_agentcore.yaml
+Dockerfile
+.dockerignore
+
+# Offline harness state (memory store between runs)
+.harness-state/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+uv.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

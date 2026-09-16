@@ -1,0 +1,566 @@
+[
+  {
+    "scenario": "01-order-tracking",
+    "events": [
+      {
+        "kind": "gateway_connected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      },
+      {
+        "kind": "gateway_tools_loaded",
+        "tools": [
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ]
+      },
+      {
+        "kind": "agent_created",
+        "tools": [
+          "search_knowledge_base",
+          "calculate_loyalty_discount",
+          "browser",
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ],
+        "model": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/facts",
+        "query": "Can you track order ORD-001?",
+        "hits": []
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/preferences",
+        "query": "Can you track order ORD-001?",
+        "hits": []
+      },
+      {
+        "kind": "user_message",
+        "raw": "Can you track order ORD-001?",
+        "effective": "Can you track order ORD-001?"
+      },
+      {
+        "kind": "tool_call",
+        "tool": "order-tracker___get_order",
+        "arguments": {
+          "order_id": "ORD-001"
+        },
+        "output": "{\"order_id\": \"ORD-001\", \"customer_id\": \"CUST-123\", \"status\": \"SHIPPED\", \"items\": [{\"name\": \"Wireless Headphones Pro\", \"qty\": 1, \"price\": 89.99}], \"total\": 89.99, \"tracking_number\": \"TRK987654321\", \"carrier\": \"UPS\", \"estimated_delivery\": \"2026-09-18\"}",
+        "status": "success"
+      },
+      {
+        "kind": "memory_save",
+        "actor_id": "CUST-123",
+        "session_id": "t1",
+        "event_id": "evt-0001",
+        "extracted": 0
+      },
+      {
+        "kind": "assistant_message",
+        "text": "Order ORD-001 (1\u00d7 Wireless Headphones Pro, $89.99) is SHIPPED. It's with UPS under tracking number TRK987654321. Estimated delivery is 2026-09-18."
+      },
+      {
+        "kind": "gateway_disconnected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      }
+    ]
+  },
+  {
+    "scenario": "02-refund-processing",
+    "events": [
+      {
+        "kind": "gateway_connected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      },
+      {
+        "kind": "gateway_tools_loaded",
+        "tools": [
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ]
+      },
+      {
+        "kind": "agent_created",
+        "tools": [
+          "search_knowledge_base",
+          "calculate_loyalty_discount",
+          "browser",
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ],
+        "model": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/facts",
+        "query": "I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund.",
+        "hits": []
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/preferences",
+        "query": "I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund.",
+        "hits": []
+      },
+      {
+        "kind": "user_message",
+        "raw": "I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund.",
+        "effective": "I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund."
+      },
+      {
+        "kind": "tool_call",
+        "tool": "order-tracker___get_order",
+        "arguments": {
+          "order_id": "ORD-002"
+        },
+        "output": "{\"order_id\": \"ORD-002\", \"customer_id\": \"CUST-123\", \"status\": \"DELIVERED\", \"items\": [{\"name\": \"Kindle Paperwhite\", \"qty\": 1, \"price\": 139.99}], \"total\": 139.99, \"tracking_number\": \"TRK123456789\", \"carrier\": \"USPS\", \"delivered_date\": \"2026-09-13\"}",
+        "status": "success"
+      },
+      {
+        "kind": "tool_call",
+        "tool": "refund-processor___initiate_refund",
+        "arguments": {
+          "order_id": "ORD-002",
+          "reason": "Customer requested return",
+          "amount": 139.99
+        },
+        "output": "{\"refund_id\": \"REF-P83TXZBF\", \"order_id\": \"ORD-002\", \"status\": \"APPROVED\", \"amount\": 139.99, \"message\": \"Refund approved. Credit appears in 3-5 business days.\", \"created_at\": \"2026-09-16T09:48:54.637312\"}",
+        "status": "success"
+      },
+      {
+        "kind": "memory_save",
+        "actor_id": "CUST-123",
+        "session_id": "t2",
+        "event_id": "evt-0002",
+        "extracted": 0
+      },
+      {
+        "kind": "assistant_message",
+        "text": "Order ORD-002 (1\u00d7 Kindle Paperwhite, $139.99) is DELIVERED. It's with USPS under tracking number TRK123456789. It was delivered on 2026-09-13.\n\nYour refund is approved. Refund ID REF-P83TXZBF for $139.99 on order ORD-002, status APPROVED. Refund approved. Credit appears in 3-5 business days."
+      },
+      {
+        "kind": "gateway_disconnected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      }
+    ]
+  },
+  {
+    "scenario": "03-knowledge-base-rag",
+    "events": [
+      {
+        "kind": "gateway_connected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      },
+      {
+        "kind": "gateway_tools_loaded",
+        "tools": [
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ]
+      },
+      {
+        "kind": "agent_created",
+        "tools": [
+          "search_knowledge_base",
+          "calculate_loyalty_discount",
+          "browser",
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ],
+        "model": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/facts",
+        "query": "What are the benefits of the Platinum loyalty tier?",
+        "hits": []
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/preferences",
+        "query": "What are the benefits of the Platinum loyalty tier?",
+        "hits": []
+      },
+      {
+        "kind": "user_message",
+        "raw": "What are the benefits of the Platinum loyalty tier?",
+        "effective": "What are the benefits of the Platinum loyalty tier?"
+      },
+      {
+        "kind": "kb_retrieve",
+        "knowledge_base_id": "ABCDEFGHIJ",
+        "query": "What are the benefits of the Platinum loyalty tier?",
+        "hits": 2
+      },
+      {
+        "kind": "tool_call",
+        "tool": "search_knowledge_base",
+        "arguments": {
+          "query": "What are the benefits of the Platinum loyalty tier?"
+        },
+        "output": "### Tier Benefits\n- Gold: Free expedited shipping, 10% discount on accessories\n- Platinum: Free same-day shipping, 15% discount, priority customer support\n---\n### Tiers\n- Silver: 0 to 999 points\n- Gold: 1000 to 4999 points\n- Platinum: 5000 or more points",
+        "status": "success"
+      },
+      {
+        "kind": "memory_save",
+        "actor_id": "CUST-123",
+        "session_id": "t3",
+        "event_id": "evt-0003",
+        "extracted": 0
+      },
+      {
+        "kind": "assistant_message",
+        "text": "Here's what the knowledge base has:\n\n**Tier Benefits**\n- Gold: Free expedited shipping, 10% discount on accessories\n- Platinum: Free same-day shipping, 15% discount, priority customer support\n\n**Tiers**\n- Silver: 0 to 999 points\n- Gold: 1000 to 4999 points\n- Platinum: 5000 or more points"
+      },
+      {
+        "kind": "gateway_disconnected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      }
+    ]
+  },
+  {
+    "scenario": "04a-memory-session-a",
+    "events": [
+      {
+        "kind": "gateway_connected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      },
+      {
+        "kind": "gateway_tools_loaded",
+        "tools": [
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ]
+      },
+      {
+        "kind": "agent_created",
+        "tools": [
+          "search_knowledge_base",
+          "calculate_loyalty_discount",
+          "browser",
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ],
+        "model": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/facts",
+        "query": "Hi, I am Jane. I prefer concise responses.",
+        "hits": []
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/preferences",
+        "query": "Hi, I am Jane. I prefer concise responses.",
+        "hits": []
+      },
+      {
+        "kind": "user_message",
+        "raw": "Hi, I am Jane. I prefer concise responses.",
+        "effective": "Hi, I am Jane. I prefer concise responses."
+      },
+      {
+        "kind": "memory_save",
+        "actor_id": "CUST-123",
+        "session_id": "s-A",
+        "event_id": "evt-0004",
+        "extracted": 2
+      },
+      {
+        "kind": "assistant_message",
+        "text": "Nice to meet you, Jane. I've noted that you prefer concise responses. How can I help you today?"
+      },
+      {
+        "kind": "gateway_disconnected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      }
+    ]
+  },
+  {
+    "scenario": "04b-memory-session-b",
+    "events": [
+      {
+        "kind": "gateway_connected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      },
+      {
+        "kind": "gateway_tools_loaded",
+        "tools": [
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ]
+      },
+      {
+        "kind": "agent_created",
+        "tools": [
+          "search_knowledge_base",
+          "calculate_loyalty_discount",
+          "browser",
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ],
+        "model": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/facts",
+        "query": "Do you remember my name and communication preference?",
+        "hits": [
+          "The customer's name is Jane."
+        ]
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/preferences",
+        "query": "Do you remember my name and communication preference?",
+        "hits": [
+          "The customer prefers concise responses (communication preference)."
+        ]
+      },
+      {
+        "kind": "user_message",
+        "raw": "Do you remember my name and communication preference?",
+        "effective": "Customer Context:\n- [SEMANTIC] The customer's name is Jane.\n- [USER_PREFERENCE] The customer prefers concise responses (communication preference).\n\nDo you remember my name and communication preference?"
+      },
+      {
+        "kind": "memory_save",
+        "actor_id": "CUST-123",
+        "session_id": "s-B",
+        "event_id": "evt-0005",
+        "extracted": 0
+      },
+      {
+        "kind": "assistant_message",
+        "text": "Of course, yes \u2014 you're Jane, and you prefer concise responses. I'll keep it brief. What can I help you with?"
+      },
+      {
+        "kind": "gateway_disconnected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      }
+    ]
+  },
+  {
+    "scenario": "05-loyalty-discount",
+    "events": [
+      {
+        "kind": "gateway_connected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      },
+      {
+        "kind": "gateway_tools_loaded",
+        "tools": [
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ]
+      },
+      {
+        "kind": "agent_created",
+        "tools": [
+          "search_knowledge_base",
+          "calculate_loyalty_discount",
+          "browser",
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ],
+        "model": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/facts",
+        "query": "I am a Gold member with 4250 points. Calculate my discount on a $150 standard order.",
+        "hits": [
+          "The customer's name is Jane."
+        ]
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/preferences",
+        "query": "I am a Gold member with 4250 points. Calculate my discount on a $150 standard order.",
+        "hits": [
+          "The customer prefers concise responses (communication preference)."
+        ]
+      },
+      {
+        "kind": "user_message",
+        "raw": "I am a Gold member with 4250 points. Calculate my discount on a $150 standard order.",
+        "effective": "Customer Context:\n- [SEMANTIC] The customer's name is Jane.\n- [USER_PREFERENCE] The customer prefers concise responses (communication preference).\n\nI am a Gold member with 4250 points. Calculate my discount on a $150 standard order."
+      },
+      {
+        "kind": "code_interpreter",
+        "session": "ci-d57349fd72",
+        "clear_context": true,
+        "code": "\nimport json, math\n\nloyalty_points   = 4250\ntier             = \"Gold\"\norder_total      = 150.0\nproduct_category = \"standard\"\n\n# Points earned per $1 spent, by product category.\nearn_rates = {\"standard\": 1, \"device\": 2, \"fresh\": 5}\n\n# Tier discount applied to the subtotal AFTER points are redeemed.\ntier_rates = {\"Silver\": 0.00, \"Gold\": 0.10, \"Platinum\": 0.15}\n\nPOINTS_PER_DOLLAR   = 100   # 100 points == $1\nMIN_REDEMPTION      = 500   # nothing redeems below 500 points\nMAX_POINTS_SHARE    = 0.50  # points may not cover more than half the order\n\n# \u2500\u2500 Points redemption \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n# Cap the redeemable value at half the order, then floor to the nearest 500\n# because points only redeem in 500-point blocks.\nmax_points_by_value = int(order_total * MAX_POINTS_SHARE * POINTS_PER_DOLLAR)\nusable_points       = min(loyalty_points, max_points_by_value)\npoints_redeemed     = (usable_points // MIN_REDEMPTION) * MIN_REDEMPTION\nif points_redeemed < MIN_REDEMPTION:\n    points_redeemed = 0\npoints_value = round(points_redeemed / POINTS_PER_DOLLAR, 2)\n\n# \u2500\u2500 Tier discount \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\ntier_rate     = tier_rates.get(tier, 0.00)\nsubtotal      = round(order_total - points_value, 2)\ntier_discount = round(subtotal * tier_rate, 2)\n\n# \u2500\u2500 Totals \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nfinal_total   = round(subtotal - tier_discount, 2)\ntotal_savings = round(points_value + tier_discount, 2)\n\n# Points are earned on what the customer actually pays.\nearn_rate        = earn_rates.get(product_category, 1)\npoints_earned    = int(math.floor(final_total * earn_rate))\nremaining_points = loyalty_points - points_redeemed + points_earned\n\nprint(json.dumps({\n    \"tier\":              tier,\n    \"product_category\":  product_category,\n    \"order_total\":       round(order_total, 2),\n    \"points_redeemed\":   points_redeemed,\n    \"points_value\":      points_value,\n    \"subtotal\":          subtotal,\n    \"tier_discount_pct\": round(tier_rate * 100, 2),\n    \"tier_discount\":     tier_discount,\n    \"final_total\":       final_total,\n    \"total_savings\":     total_savings,\n    \"points_earned\":     points_earned,\n    \"remaining_points\":  remaining_points,\n}, indent=2))\n"
+      },
+      {
+        "kind": "code_session_closed",
+        "session": "ci-d57349fd72"
+      },
+      {
+        "kind": "tool_call",
+        "tool": "calculate_loyalty_discount",
+        "arguments": {
+          "loyalty_points": 4250,
+          "tier": "Gold",
+          "order_total": 150.0,
+          "product_category": "standard"
+        },
+        "output": "{\"sessionId\": \"ci-d57349fd72\", \"isError\": false, \"content\": [{\"type\": \"text\", \"text\": \"{\\n  \\\"tier\\\": \\\"Gold\\\",\\n  \\\"product_category\\\": \\\"standard\\\",\\n  \\\"order_total\\\": 150.0,\\n  \\\"points_redeemed\\\": 4000,\\n  \\\"points_value\\\": 40.0,\\n  \\\"subtotal\\\": 110.0,\\n  \\\"tier_discount_pct\\\": 10.0,\\n  \\\"tier_discount\\\": 11.0,\\n  \\\"final_total\\\": 99.0,\\n  \\\"total_savings\\\": 51.0,\\n  \\\"points_earned\\\": 99,\\n  \\\"remaining_points\\\": 349\\n}\"}], \"structuredContent\": {\"stdout\": \"{\\n  \\\"tier\\\": \\\"Gold\\\",\\n  \\\"product_category\\\": \\\"standard\\\",\\n  \\\"order_total\\\": 150.0,\\n  \\\"points_redeemed\\\": 4000,\\n  \\\"points_value\\\": 40.0,\\n  \\\"subtotal\\\": 110.0,\\n  \\\"tier_discount_pct\\\": 10.0,\\n  \\\"tier_discount\\\": 11.0,\\n  \\\"final_total\\\": 99.0,\\n  \\\"total_savings\\\": 51.0,\\n  \\\"points_earned\\\": 99,\\n  \\\"remaining_points\\\": 349\\n}\", \"stderr\": \"\", \"exitCode\": 0, \"executionTime\": null}}",
+        "status": "success"
+      },
+      {
+        "kind": "memory_save",
+        "actor_id": "CUST-123",
+        "session_id": "t5",
+        "event_id": "evt-0006",
+        "extracted": 1
+      },
+      {
+        "kind": "assistant_message",
+        "text": "Hi Jane! Here's the breakdown on your $150.00 standard order:\n  \u2022 Points redeemed: 4,000 (worth $40.00)\n  \u2022 Gold tier discount: 10.0% = $11.00\n  \u2022 Final total: $99.00\n  \u2022 Total saved: $51.00\n  \u2022 Points earned on this order: 99\n  \u2022 Remaining points balance: 349"
+      },
+      {
+        "kind": "gateway_disconnected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      }
+    ]
+  },
+  {
+    "scenario": "06-browser-tool",
+    "events": [
+      {
+        "kind": "gateway_connected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      },
+      {
+        "kind": "gateway_tools_loaded",
+        "tools": [
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ]
+      },
+      {
+        "kind": "agent_created",
+        "tools": [
+          "search_knowledge_base",
+          "calculate_loyalty_discount",
+          "browser",
+          "order-tracker___get_order",
+          "order-tracker___get_customer_orders",
+          "order-tracker___get_customer",
+          "refund-processor___initiate_refund",
+          "refund-processor___check_refund_status",
+          "refund-processor___get_return_label"
+        ],
+        "model": "global.amazon.nova-2-lite-v1:0"
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/facts",
+        "query": "Go to https://www.udacity.com and tell me the page title.",
+        "hits": [
+          "The customer is a Gold tier member.",
+          "The customer's name is Jane."
+        ]
+      },
+      {
+        "kind": "memory_retrieve",
+        "namespace": "cs_agent/CUST-123/preferences",
+        "query": "Go to https://www.udacity.com and tell me the page title.",
+        "hits": [
+          "The customer prefers concise responses (communication preference)."
+        ]
+      },
+      {
+        "kind": "user_message",
+        "raw": "Go to https://www.udacity.com and tell me the page title.",
+        "effective": "Customer Context:\n- [SEMANTIC] The customer is a Gold tier member.\n- [SEMANTIC] The customer's name is Jane.\n- [USER_PREFERENCE] The customer prefers concise responses (communication preference).\n\nGo to https://www.udacity.com and tell me the page title."
+      },
+      {
+        "kind": "browser",
+        "url": "https://www.udacity.com",
+        "action": "navigate",
+        "title": "Learn the Latest Tech Skills; Advance Your Career | Udacity",
+        "source": "live-fetch"
+      },
+      {
+        "kind": "tool_call",
+        "tool": "browser",
+        "arguments": {
+          "url": "https://www.udacity.com"
+        },
+        "output": "{\"url\": \"https://www.udacity.com\", \"action\": \"navigate\", \"title\": \"Learn the Latest Tech Skills; Advance Your Career | Udacity\", \"source\": \"live-fetch\"}",
+        "status": "success"
+      },
+      {
+        "kind": "memory_save",
+        "actor_id": "CUST-123",
+        "session_id": "t6",
+        "event_id": "evt-0007",
+        "extracted": 0
+      },
+      {
+        "kind": "assistant_message",
+        "text": "Hi Jane! I loaded https://www.udacity.com \u2014 the page title is \"Learn the Latest Tech Skills; Advance Your Career | Udacity\"."
+      },
+      {
+        "kind": "gateway_disconnected",
+        "url": "https://customersupportgateway-abc123defg.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+      }
+    ]
+  }
+]

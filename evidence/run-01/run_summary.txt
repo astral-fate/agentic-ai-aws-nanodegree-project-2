@@ -1,0 +1,21 @@
+====================================================================================
+SUMMARY
+====================================================================================
+
+Scenario                                       Capability                   Result
+------------------------------------------------------------------------------------
+Test 1 — Order Tracking                        Gateway (API Gateway target) [PASS]
+Test 2 — Refund Processing                     Gateway (Lambda target)      [PASS]
+Test 3 — Knowledge Base (RAG)                  Bedrock Knowledge Base       [PASS]
+Test 4a — Long-Term Memory, session A (store)  AgentCore Memory             [PASS]
+Test 4b — Long-Term Memory, session B (recall) AgentCore Memory             [PASS]
+Test 5 — Loyalty Discount Calculation          AgentCore Code Interpreter   [PASS]
+Test 6 — Browser Tool                          AgentCore Browser            [PASS]
+
+7/7 scenarios passed  ·  2026-09-16T09:48:55+00:00
+
+Mode: offline harness. Gateway tools run the real Lambda handler
+code and the discount is computed by really executing the
+generated program. Tool ROUTING is rule-based, not Nova 2 Lite —
+see docs/TESTING.md for what that does and does not prove.
+====================================================================================

@@ -1,0 +1,47 @@
+====================================================================================
+Test 6 — Browser Tool
+Capability under test : AgentCore Browser
+Mode                  : offline harness (no AWS account)
+Timestamp             : 2026-09-16T09:48:55+00:00
+====================================================================================
+
+$ agentcore invoke '{"prompt": "Go to https://www.udacity.com and tell me the page title.", "customer_id": "CUST-123", "session_id": "t6"}'
+
+[gateway] connected, 6 MCP tools loaded:
+            order-tracker___get_order
+            order-tracker___get_customer_orders
+            order-tracker___get_customer
+            refund-processor___initiate_refund
+            refund-processor___check_refund_status
+            refund-processor___get_return_label
+
+[memory]  queried 2 namespace(s), 3 memories returned
+            cs_agent/CUST-123/facts → The customer is a Gold tier member.
+            cs_agent/CUST-123/facts → The customer's name is Jane.
+            cs_agent/CUST-123/preferences → The customer prefers concise responses (communication preference).
+
+[memory]  context injected into the user message:
+            Customer Context:
+            - [SEMANTIC] The customer is a Gold tier member.
+            - [SEMANTIC] The customer's name is Jane.
+            - [USER_PREFERENCE] The customer prefers concise responses (communication preference).
+            
+            Go to https://www.udacity.com and tell me the page title.
+
+[tool]    browser
+            args   {"url": "https://www.udacity.com"}
+            result {"url": "https://www.udacity.com", "action": "navigate", "title": "Learn the Latest Tech Skills; Advance Your Career | Udacity", "source": "live-fetch"}
+
+[browser] https://www.udacity.com → live-fetch
+
+[memory]  create_event evt-0007 actor=CUST-123 session=t6 → 0 memory record(s) extracted
+
+------------------------------------------------------------------------------------
+AGENT REPLY
+------------------------------------------------------------------------------------
+Hi Jane! I loaded https://www.udacity.com — the page title is "Learn the Latest Tech Skills; Advance Your Career | Udacity".
+
+------------------------------------------------------------------------------------
+Expected: page title retrieved from the live page
+RESULT:   [PASS] every expected element is present
+------------------------------------------------------------------------------------

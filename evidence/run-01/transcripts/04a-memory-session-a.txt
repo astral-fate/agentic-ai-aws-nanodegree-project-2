@@ -1,0 +1,30 @@
+====================================================================================
+Test 4a — Long-Term Memory, session A (store)
+Capability under test : AgentCore Memory
+Mode                  : offline harness (no AWS account)
+Timestamp             : 2026-09-16T09:48:54+00:00
+====================================================================================
+
+$ agentcore invoke '{"prompt": "Hi, I am Jane. I prefer concise responses.", "customer_id": "CUST-123", "session_id": "s-A"}'
+
+[gateway] connected, 6 MCP tools loaded:
+            order-tracker___get_order
+            order-tracker___get_customer_orders
+            order-tracker___get_customer
+            refund-processor___initiate_refund
+            refund-processor___check_refund_status
+            refund-processor___get_return_label
+
+[memory]  queried 2 namespace(s), 0 memories returned
+
+[memory]  create_event evt-0004 actor=CUST-123 session=s-A → 2 memory record(s) extracted
+
+------------------------------------------------------------------------------------
+AGENT REPLY
+------------------------------------------------------------------------------------
+Nice to meet you, Jane. I've noted that you prefer concise responses. How can I help you today?
+
+------------------------------------------------------------------------------------
+Expected: the agent acknowledges; the memory strategies extract the name and the preference
+RESULT:   [PASS] every expected element is present
+------------------------------------------------------------------------------------

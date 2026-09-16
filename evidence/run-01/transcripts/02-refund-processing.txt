@@ -1,0 +1,40 @@
+====================================================================================
+Test 2 — Refund Processing
+Capability under test : Gateway (Lambda target)
+Mode                  : offline harness (no AWS account)
+Timestamp             : 2026-09-16T09:48:54+00:00
+====================================================================================
+
+$ agentcore invoke '{"prompt": "I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund.", "customer_id": "CUST-123", "session_id": "t2"}'
+
+[gateway] connected, 6 MCP tools loaded:
+            order-tracker___get_order
+            order-tracker___get_customer_orders
+            order-tracker___get_customer
+            refund-processor___initiate_refund
+            refund-processor___check_refund_status
+            refund-processor___get_return_label
+
+[memory]  queried 2 namespace(s), 0 memories returned
+
+[tool]    order-tracker___get_order
+            args   {"order_id": "ORD-002"}
+            result {"order_id": "ORD-002", "customer_id": "CUST-123", "status": "DELIVERED", "items": [{"name": "Kindle Paperwhite", "qty": 1, "price": 139.99}], "total": 139.99, "tracking_number": "TRK123456789", "carrier": "USPS", "delivered_date": "2026-09-13"}
+
+[tool]    refund-processor___initiate_refund
+            args   {"order_id": "ORD-002", "reason": "Customer requested return", "amount": 139.99}
+            result {"refund_id": "REF-P83TXZBF", "order_id": "ORD-002", "status": "APPROVED", "amount": 139.99, "message": "Refund approved. Credit appears in 3-5 business days.", "created_at": "2026-09-16T09:48:54.637312"}
+
+[memory]  create_event evt-0002 actor=CUST-123 session=t2 → 0 memory record(s) extracted
+
+------------------------------------------------------------------------------------
+AGENT REPLY
+------------------------------------------------------------------------------------
+Order ORD-002 (1× Kindle Paperwhite, $139.99) is DELIVERED. It's with USPS under tracking number TRK123456789. It was delivered on 2026-09-13.
+
+Your refund is approved. Refund ID REF-P83TXZBF for $139.99 on order ORD-002, status APPROVED. Refund approved. Credit appears in 3-5 business days.
+
+------------------------------------------------------------------------------------
+Expected: refund ID, APPROVED status, "3-5 business days" message
+RESULT:   [PASS] every expected element is present
+------------------------------------------------------------------------------------

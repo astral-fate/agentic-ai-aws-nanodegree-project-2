@@ -1,0 +1,13 @@
+# Normalise to LF in the repository; let git decide the working copy.
+* text=auto
+
+# Shell scripts MUST keep LF. run-all.sh is pasted into AWS CloudShell, and
+# bash treats a trailing CR as part of the command — the failures are
+# spectacularly unhelpful ("$'\r': command not found").
+*.sh text eol=lf
+
+# Python keeps LF too, so the Lambda zips are byte-identical across machines.
+*.py text eol=lf
+
+# Binary: never touch.
+*.png binary

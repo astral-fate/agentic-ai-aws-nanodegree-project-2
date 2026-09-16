@@ -1,0 +1,162 @@
+{
+  "memories": {
+    "CustomerSupportMemory-abc123defg|cs_agent/CUST-123/facts": [
+      {
+        "memoryRecordId": "mem-0001",
+        "content": {
+          "text": "The customer's name is Jane."
+        },
+        "namespaces": [
+          "cs_agent/CUST-123/facts"
+        ],
+        "strategyType": "SEMANTIC",
+        "createdAt": "2026-09-16T09:48:54.651008+00:00"
+      },
+      {
+        "memoryRecordId": "mem-0002",
+        "content": {
+          "text": "The customer is a Gold tier member."
+        },
+        "namespaces": [
+          "cs_agent/CUST-123/facts"
+        ],
+        "strategyType": "SEMANTIC",
+        "createdAt": "2026-09-16T09:48:54.731352+00:00"
+      }
+    ],
+    "CustomerSupportMemory-abc123defg|cs_agent/CUST-123/preferences": [
+      {
+        "memoryRecordId": "mem-0001",
+        "content": {
+          "text": "The customer prefers concise responses (communication preference)."
+        },
+        "namespaces": [
+          "cs_agent/CUST-123/preferences"
+        ],
+        "strategyType": "USER_PREFERENCE",
+        "createdAt": "2026-09-16T09:48:54.651017+00:00"
+      }
+    ]
+  },
+  "events": [
+    {
+      "eventId": "evt-0001",
+      "memoryId": "CustomerSupportMemory-abc123defg",
+      "actorId": "CUST-123",
+      "sessionId": "t1",
+      "messages": [
+        {
+          "text": "Can you track order ORD-001?",
+          "role": "USER"
+        },
+        {
+          "text": "Order ORD-001 (1\u00d7 Wireless Headphones Pro, $89.99) is SHIPPED. It's with UPS under tracking number TRK987654321. Estimated delivery is 2026-09-18.",
+          "role": "ASSISTANT"
+        }
+      ],
+      "createdAt": "2026-09-16T09:48:54.630112+00:00"
+    },
+    {
+      "eventId": "evt-0002",
+      "memoryId": "CustomerSupportMemory-abc123defg",
+      "actorId": "CUST-123",
+      "sessionId": "t2",
+      "messages": [
+        {
+          "text": "I want to return my Kindle Paperwhite (ORD-002). Please initiate a refund.",
+          "role": "USER"
+        },
+        {
+          "text": "Order ORD-002 (1\u00d7 Kindle Paperwhite, $139.99) is DELIVERED. It's with USPS under tracking number TRK123456789. It was delivered on 2026-09-13.\n\nYour refund is approved. Refund ID REF-P83TXZBF for $139.99 on order ORD-002, status APPROVED. Refund approved. Credit appears in 3-5 business days.",
+          "role": "ASSISTANT"
+        }
+      ],
+      "createdAt": "2026-09-16T09:48:54.637577+00:00"
+    },
+    {
+      "eventId": "evt-0003",
+      "memoryId": "CustomerSupportMemory-abc123defg",
+      "actorId": "CUST-123",
+      "sessionId": "t3",
+      "messages": [
+        {
+          "text": "What are the benefits of the Platinum loyalty tier?",
+          "role": "USER"
+        },
+        {
+          "text": "Here's what the knowledge base has:\n\n**Tier Benefits**\n- Gold: Free expedited shipping, 10% discount on accessories\n- Platinum: Free same-day shipping, 15% discount, priority customer support\n\n**Tiers**\n- Silver: 0 to 999 points\n- Gold: 1000 to 4999 points\n- Platinum: 5000 or more points",
+          "role": "ASSISTANT"
+        }
+      ],
+      "createdAt": "2026-09-16T09:48:54.644639+00:00"
+    },
+    {
+      "eventId": "evt-0004",
+      "memoryId": "CustomerSupportMemory-abc123defg",
+      "actorId": "CUST-123",
+      "sessionId": "s-A",
+      "messages": [
+        {
+          "text": "Hi, I am Jane. I prefer concise responses.",
+          "role": "USER"
+        },
+        {
+          "text": "Nice to meet you, Jane. I've noted that you prefer concise responses. How can I help you today?",
+          "role": "ASSISTANT"
+        }
+      ],
+      "createdAt": "2026-09-16T09:48:54.650979+00:00"
+    },
+    {
+      "eventId": "evt-0005",
+      "memoryId": "CustomerSupportMemory-abc123defg",
+      "actorId": "CUST-123",
+      "sessionId": "s-B",
+      "messages": [
+        {
+          "text": "Customer Context:\n- [SEMANTIC] The customer's name is Jane.\n- [USER_PREFERENCE] The customer prefers concise responses (communication preference).\n\nDo you remember my name and communication preference?",
+          "role": "USER"
+        },
+        {
+          "text": "Of course, yes \u2014 you're Jane, and you prefer concise responses. I'll keep it brief. What can I help you with?",
+          "role": "ASSISTANT"
+        }
+      ],
+      "createdAt": "2026-09-16T09:48:54.657526+00:00"
+    },
+    {
+      "eventId": "evt-0006",
+      "memoryId": "CustomerSupportMemory-abc123defg",
+      "actorId": "CUST-123",
+      "sessionId": "t5",
+      "messages": [
+        {
+          "text": "Customer Context:\n- [SEMANTIC] The customer's name is Jane.\n- [USER_PREFERENCE] The customer prefers concise responses (communication preference).\n\nI am a Gold member with 4250 points. Calculate my discount on a $150 standard order.",
+          "role": "USER"
+        },
+        {
+          "text": "Hi Jane! Here's the breakdown on your $150.00 standard order:\n  \u2022 Points redeemed: 4,000 (worth $40.00)\n  \u2022 Gold tier discount: 10.0% = $11.00\n  \u2022 Final total: $99.00\n  \u2022 Total saved: $51.00\n  \u2022 Points earned on this order: 99\n  \u2022 Remaining points balance: 349",
+          "role": "ASSISTANT"
+        }
+      ],
+      "createdAt": "2026-09-16T09:48:54.731279+00:00"
+    },
+    {
+      "eventId": "evt-0007",
+      "memoryId": "CustomerSupportMemory-abc123defg",
+      "actorId": "CUST-123",
+      "sessionId": "t6",
+      "messages": [
+        {
+          "text": "Customer Context:\n- [SEMANTIC] The customer is a Gold tier member.\n- [SEMANTIC] The customer's name is Jane.\n- [USER_PREFERENCE] The customer prefers concise responses (communication preference).\n\nGo to https://www.udacity.com and tell me the page title.",
+          "role": "USER"
+        },
+        {
+          "text": "Hi Jane! I loaded https://www.udacity.com \u2014 the page title is \"Learn the Latest Tech Skills; Advance Your Career | Udacity\".",
+          "role": "ASSISTANT"
+        }
+      ],
+      "createdAt": "2026-09-16T09:48:55.212122+00:00"
+    }
+  ]
+}

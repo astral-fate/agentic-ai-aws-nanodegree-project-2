@@ -1,0 +1,107 @@
+====================================================================================
+Test 5 — Loyalty Discount Calculation
+Capability under test : AgentCore Code Interpreter
+Mode                  : offline harness (no AWS account)
+Timestamp             : 2026-09-16T09:48:54+00:00
+====================================================================================
+
+$ agentcore invoke '{"prompt": "I am a Gold member with 4250 points. Calculate my discount on a $150 standard order.", "customer_id": "CUST-123", "session_id": "t5"}'
+
+[gateway] connected, 6 MCP tools loaded:
+            order-tracker___get_order
+            order-tracker___get_customer_orders
+            order-tracker___get_customer
+            refund-processor___initiate_refund
+            refund-processor___check_refund_status
+            refund-processor___get_return_label
+
+[memory]  queried 2 namespace(s), 2 memories returned
+            cs_agent/CUST-123/facts → The customer's name is Jane.
+            cs_agent/CUST-123/preferences → The customer prefers concise responses (communication preference).
+
+[memory]  context injected into the user message:
+            Customer Context:
+            - [SEMANTIC] The customer's name is Jane.
+            - [USER_PREFERENCE] The customer prefers concise responses (communication preference).
+            
+            I am a Gold member with 4250 points. Calculate my discount on a $150 standard order.
+
+[tool]    calculate_loyalty_discount
+            args   {"loyalty_points": 4250, "tier": "Gold", "order_total": 150.0, "product_category": "standard"}
+            result {"sessionId": "ci-d57349fd72", "isError": false, "content": [{"type": "text", "text": "{\n  \"tier\": \"Gold\",\n  \"product_category\": \"standard\",\n  \"order_total\": 150.0,\n  \"points_redeemed\": 4000,\n  \"points_value\": 40.0,\n  \"subtotal\": 110.0,\n  \"tier_discount_pct\": 10.0,\n  \"tier_discount\": 11.0,\n  \"final_total\": 99.0,\n  \"total_savings\": 51.0,\n  \"points_earned\": 99,\n  \"remaining_points\": 349\n}"}], "structuredContent": {"stdout": "{\n  \"tier\": \"Gold\",\n  \"product_category\": \"standard\",\n  \"order_total\": 150.0,\n  \"points_redeemed\": 4000,\n  \"points …
+
+[sandbox] executeCode session=ci-d57349fd72 clearContext=True
+            ── generated program ──
+            import json, math
+            
+            loyalty_points   = 4250
+            tier             = "Gold"
+            order_total      = 150.0
+            product_category = "standard"
+            
+            # Points earned per $1 spent, by product category.
+            earn_rates = {"standard": 1, "device": 2, "fresh": 5}
+            
+            # Tier discount applied to the subtotal AFTER points are redeemed.
+            tier_rates = {"Silver": 0.00, "Gold": 0.10, "Platinum": 0.15}
+            
+            POINTS_PER_DOLLAR   = 100   # 100 points == $1
+            MIN_REDEMPTION      = 500   # nothing redeems below 500 points
+            MAX_POINTS_SHARE    = 0.50  # points may not cover more than half the order
+            
+            # ── Points redemption ────────────────────────────────────────────────────
+            # Cap the redeemable value at half the order, then floor to the nearest 500
+            # because points only redeem in 500-point blocks.
+            max_points_by_value = int(order_total * MAX_POINTS_SHARE * POINTS_PER_DOLLAR)
+            usable_points       = min(loyalty_points, max_points_by_value)
+            points_redeemed     = (usable_points // MIN_REDEMPTION) * MIN_REDEMPTION
+            if points_redeemed < MIN_REDEMPTION:
+                points_redeemed = 0
+            points_value = round(points_redeemed / POINTS_PER_DOLLAR, 2)
+            
+            # ── Tier discount ────────────────────────────────────────────────────────
+            tier_rate     = tier_rates.get(tier, 0.00)
+            subtotal      = round(order_total - points_value, 2)
+            tier_discount = round(subtotal * tier_rate, 2)
+            
+            # ── Totals ───────────────────────────────────────────────────────────────
+            final_total   = round(subtotal - tier_discount, 2)
+            total_savings = round(points_value + tier_discount, 2)
+            
+            # Points are earned on what the customer actually pays.
+            earn_rate        = earn_rates.get(product_category, 1)
+            points_earned    = int(math.floor(final_total * earn_rate))
+            remaining_points = loyalty_points - points_redeemed + points_earned
+            
+            print(json.dumps({
+                "tier":              tier,
+                "product_category":  product_category,
+                "order_total":       round(order_total, 2),
+                "points_redeemed":   points_redeemed,
+                "points_value":      points_value,
+                "subtotal":          subtotal,
+                "tier_discount_pct": round(tier_rate * 100, 2),
+                "tier_discount":     tier_discount,
+                "final_total":       final_total,
+                "total_savings":     total_savings,
+                "points_earned":     points_earned,
+                "remaining_points":  remaining_points,
+            }, indent=2))
+
+[memory]  create_event evt-0006 actor=CUST-123 session=t5 → 1 memory record(s) extracted
+
+------------------------------------------------------------------------------------
+AGENT REPLY
+------------------------------------------------------------------------------------
+Hi Jane! Here's the breakdown on your $150.00 standard order:
+  • Points redeemed: 4,000 (worth $40.00)
+  • Gold tier discount: 10.0% = $11.00
+  • Final total: $99.00
+  • Total saved: $51.00
+  • Points earned on this order: 99
+  • Remaining points balance: 349
+
+------------------------------------------------------------------------------------
+Expected: points redeemed, tier discount 10%, correct final total, remaining points
+RESULT:   [PASS] every expected element is present
+------------------------------------------------------------------------------------

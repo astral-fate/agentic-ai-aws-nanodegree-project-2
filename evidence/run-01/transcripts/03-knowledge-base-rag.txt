@@ -1,0 +1,53 @@
+====================================================================================
+Test 3 — Knowledge Base (RAG)
+Capability under test : Bedrock Knowledge Base
+Mode                  : offline harness (no AWS account)
+Timestamp             : 2026-09-16T09:48:54+00:00
+====================================================================================
+
+$ agentcore invoke '{"prompt": "What are the benefits of the Platinum loyalty tier?", "customer_id": "CUST-123", "session_id": "t3"}'
+
+[gateway] connected, 6 MCP tools loaded:
+            order-tracker___get_order
+            order-tracker___get_customer_orders
+            order-tracker___get_customer
+            refund-processor___initiate_refund
+            refund-processor___check_refund_status
+            refund-processor___get_return_label
+
+[memory]  queried 2 namespace(s), 0 memories returned
+
+[tool]    search_knowledge_base
+            args   {"query": "What are the benefits of the Platinum loyalty tier?"}
+            result ### Tier Benefits
+- Gold: Free expedited shipping, 10% discount on accessories
+- Platinum: Free same-day shipping, 15% discount, priority customer support
+---
+### Tiers
+- Silver: 0 to 999 points
+- Gold: 1000 to 4999 points
+- Platinum: 5000 or more points
+
+[kb]      Retrieve on ABCDEFGHIJ → 2 chunk(s)
+            query: What are the benefits of the Platinum loyalty tier?
+
+[memory]  create_event evt-0003 actor=CUST-123 session=t3 → 0 memory record(s) extracted
+
+------------------------------------------------------------------------------------
+AGENT REPLY
+------------------------------------------------------------------------------------
+Here's what the knowledge base has:
+
+**Tier Benefits**
+- Gold: Free expedited shipping, 10% discount on accessories
+- Platinum: Free same-day shipping, 15% discount, priority customer support
+
+**Tiers**
+- Silver: 0 to 999 points
+- Gold: 1000 to 4999 points
+- Platinum: 5000 or more points
+
+------------------------------------------------------------------------------------
+Expected: free same-day shipping, 15% discount, priority support
+RESULT:   [PASS] every expected element is present
+------------------------------------------------------------------------------------

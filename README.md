@@ -1,0 +1,277 @@
+# Agentic AI — AWS Nanodegree, Project 2
+
+**Customer Support Agent with Amazon Bedrock AgentCore and the Strands SDK**
+
+A single conversational agent for an e-commerce platform that tracks orders,
+processes refunds, answers policy questions from a knowledge base, remembers
+customers between sessions, computes loyalty discounts in a sandbox, and
+browses the live web.
+
+Five capabilities, five different AgentCore primitives, one entrypoint:
+
+| Capability | Primitive | How |
+|---|---|---|
+| **Order tracking** | Gateway → API Gateway target | `get_order`, `get_customer`, `get_customer_orders` as MCP tools over a REST proxy integration |
+| **Refunds and returns** | Gateway → Lambda target | `initiate_refund`, `check_refund_status`, `get_return_label`, routed by the tool name in the Lambda client context |
+| **Product and policy answers** | Bedrock Knowledge Base | `search_knowledge_base` calls the Retrieve API and returns joined chunks, grounded |
+| **Cross-session memory** | AgentCore Memory | a `HookProvider` that injects customer context *before* the model reads the message, and saves every completed turn |
+| **Exact discount arithmetic** | Code Interpreter | the business rules are written into a program and executed with `clearContext=True` — the model never does the sums |
+| **Live web pages** | AgentCore Browser | `AgentCoreBrowser(region=REGION).browser` |
+
+---
+
+## Status
+
+| | |
+|---|---|
+| Offline test suite | **87 tests, all passing** — `python -m pytest`, ~6 seconds, no AWS account |
+| Six project scenarios | **7/7 passing** — `python -m scripts.run_scenarios` |
+| Lambda handlers | ✅ real, unmodified code executes in every transcript |
+| Discount arithmetic | ✅ the generated program is really executed, in a subprocess |
+| Browser | ✅ real HTTP fetch, labelled `live-fetch` in the transcript |
+| AWS deployment | ⏳ not yet run — infrastructure automated in [`cloudshell/run-all.sh`](cloudshell/run-all.sh) |
+| Evidence | [`evidence/run-01/`](evidence/run-01/) |
+
+> **Read this before citing the evidence.** The transcripts come from an
+> **offline harness**, not a deployed agent. The Lambda handlers and the
+> discount program really run; tool *routing* is a rule-based planner rather
+> than Nova 2 Lite. So the evidence shows **the wiring is correct**, not
+> **the model behaves**. That line is drawn precisely in
+> [`docs/TESTING.md`](docs/TESTING.md), and the live procedure that closes the
+> gap is [`docs/RUNBOOK.md`](docs/RUNBOOK.md) §B.
+
+**Grading each rubric line against the evidence:** [`SUBMISSION.md`](SUBMISSION.md).
+
+---
+
+## The six scenarios
+
+Every prompt below is verbatim from the project instructions, and every reply
+is checked against that scenario's own "Expected:" line.
+
+[![Run summary](evidence/run-01/screenshots/00-run-summary.png)](evidence/run-01/screenshots/00-run-summary.png)
+
+<sub>🔍 [Open full size](evidence/run-01/screenshots/00-run-summary.png) &nbsp;·&nbsp; text: [`evidence/run-01/run_summary.txt`](evidence/run-01/run_summary.txt)</sub>
+
+### Test 2 — both Gateway targets in one turn
+
+The rubric asks for one API-based and one Lambda-based tool invocation. This
+turn does both, and the ordering is the interesting part: the order is looked
+up **first**, so the `$139.99` refund amount comes from the order record
+rather than from the model's impression of what a Kindle costs.
+
+[![Refund processing](evidence/run-01/screenshots/02-refund-processing.png)](evidence/run-01/screenshots/02-refund-processing.png)
+
+<sub>🔍 [Open full size](evidence/run-01/screenshots/02-refund-processing.png) &nbsp;·&nbsp; text: [`02-refund-processing.txt`](evidence/run-01/transcripts/02-refund-processing.txt)</sub>
+
+### Test 5 — arithmetic the model never touches
+
+The whole point of the Code Interpreter is that money arithmetic done by a
+language model is arithmetic you cannot audit. The transcript shows the
+generated program in full, then the numbers it produced.
+
+[![Loyalty discount](evidence/run-01/screenshots/05-loyalty-discount.png)](evidence/run-01/screenshots/05-loyalty-discount.png)
+
+<sub>🔍 [Open full size](evidence/run-01/screenshots/05-loyalty-discount.png) &nbsp;·&nbsp; text: [`05-loyalty-discount.txt`](evidence/run-01/transcripts/05-loyalty-discount.txt)</sub>
+
+Worked by hand from the catalog's rules, to check the program rather than
+trust it: points cover at most half of $150, so $75 → 7,500 points; the
+customer has 4,250, floored to 500-blocks → **4,000 points = $40**; subtotal
+$110; Gold takes 10% of that → $11; **final $99.00**; earns 99 points back;
+balance 4,250 − 4,000 + 99 = **349**. `tests/test_loyalty_discount.py` asserts
+every one of those independently.
+
+### Test 4 — memory across two sessions
+
+Sessions `s-A` and `s-B` share a `customer_id` and nothing else. The second
+transcript shows both namespaces queried, both memories returned, and the
+`Customer Context:` block prepended to the message *before* the model reads it.
+
+[![Memory recall](evidence/run-01/screenshots/04b-memory-session-b.png)](evidence/run-01/screenshots/04b-memory-session-b.png)
+
+<sub>🔍 [Open full size](evidence/run-01/screenshots/04b-memory-session-b.png) &nbsp;·&nbsp; session A: [`04a`](evidence/run-01/transcripts/04a-memory-session-a.txt) &nbsp;·&nbsp; session B: [`04b`](evidence/run-01/transcripts/04b-memory-session-b.txt)</sub>
+
+### Test 3 — grounded retrieval
+
+Retrieval runs over the real `product_catalog.txt`, and the reply quotes the
+retrieved chunks rather than paraphrasing them. Paraphrasing here would hide a
+retrieval miss behind fluent prose.
+
+[![Knowledge base](evidence/run-01/screenshots/03-knowledge-base-rag.png)](evidence/run-01/screenshots/03-knowledge-base-rag.png)
+
+<sub>🔍 [Open full size](evidence/run-01/screenshots/03-knowledge-base-rag.png) &nbsp;·&nbsp; text: [`03-knowledge-base-rag.txt`](evidence/run-01/transcripts/03-knowledge-base-rag.txt)</sub>
+
+### The rest
+
+| | | |
+|---|---|---|
+| [Test 1 — Order tracking](evidence/run-01/screenshots/01-order-tracking.png) | Gateway, API target | SHIPPED · TRK987654321 · UPS |
+| [Test 6 — Browser](evidence/run-01/screenshots/06-browser-tool.png) | AgentCore Browser | a real HTTP fetch, labelled `live-fetch` |
+| [Offline test suite](evidence/run-01/screenshots/07-offline-test-suite.png) | 87 tests | ~6 seconds, no AWS |
+
+Full index with every artefact: [`evidence/run-01/INDEX.md`](evidence/run-01/INDEX.md).
+
+---
+
+## Run it yourself in six seconds
+
+No AWS account, no credentials, no network.
+
+```bash
+git clone https://github.com/astral-fate/agentic-ai-aws-nanodegree-project-2
+cd agentic-ai-aws-nanodegree-project-2
+
+python -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements-dev.txt
+
+python -m pytest                  # 87 tests
+python -m scripts.run_scenarios   # the six scenarios, writes evidence/run-01/
+python -m scripts.render_screenshots
+```
+
+### How that is possible
+
+`main.py` imports nine things that only exist inside AWS.
+[`harness/fakes.py`](harness/fakes.py) registers stand-ins for all of them in
+`sys.modules` before the deliverable is imported, so **the file that gets
+deployed is the file that gets tested** — not a copy, not a refactor.
+
+The stand-ins are not uniformly fake, and the differences are the whole story:
+
+| Component | Offline |
+|---|---|
+| Gateway tools | **real Lambda handler code**, imported from `project/starter/lambda/`; only the transport is faked |
+| Code Interpreter | **really executes** the generated program, in a subprocess with no inherited globals |
+| Browser | **real HTTP request**, with a clearly-labelled fixture fallback when offline |
+| Knowledge Base | real `product_catalog.txt`, term-overlap ranking instead of Titan embeddings |
+| Memory | real namespaces and event flow, regex extraction instead of asynchronous LLM strategies |
+| **Nova 2 Lite** | **not a model** — a rule-based planner in `harness/scripted_model.py` |
+
+That last row is the one to keep in mind. A green run means every wiring bug
+is already fixed, which is exactly what makes the live run worth the AWS
+budget: a failure there genuinely means something about the model.
+
+---
+
+## Deploying to AWS
+
+Full walkthrough with troubleshooting: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+Open **AWS CloudShell** in `us-east-1` and run:
+
+```bash
+bash cloudshell/run-all.sh
+```
+
+It creates the IAM role, both Lambdas, the REST API with all three GET
+resources wired as proxy integrations and deployed to a stage, the S3 bucket
+with the catalog in it, and the AgentCore Memory resource with both
+strategies. It smoke-tests the Lambdas both ways — a valid order, and an
+unknown one that must **404 rather than return an invented order** — then
+writes every ID into `.env`.
+
+It is resumable, and it never deletes working resources.
+
+Three steps stay in the console — the Knowledge Base, the Gateway and its two
+targets, and `agentcore configure` / `agentcore deploy` — because creating a
+Knowledge Base from the CLI means hand-building an OpenSearch Serverless
+collection plus three policies and a vector index first. The script prints
+those steps with your values already filled in.
+
+Then:
+
+```bash
+cd project/starter
+agentcore configure --entrypoint main.py --name customer_support_agent
+agentcore deploy
+agentcore invoke '{"prompt": "Can you track order ORD-001?", "customer_id": "CUST-123", "session_id": "t1"}'
+```
+
+> **Cost.** Under $15 total. Lambda, API Gateway and S3 are effectively free
+> at this volume; the Gateway, Memory and the agent cost nothing at rest.
+> **OpenSearch Serverless bills by OCU-hour whether or not anything queries
+> it** — a project left running over a weekend spends more on an idle vector
+> store than on every model call it ever made. Delete the collection *first*
+> when tearing down; deleting the Knowledge Base does not take it with you.
+
+---
+
+## Design notes
+
+The decisions worth arguing about are written up in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The short version:
+
+- **Memory is a hook, not a tool.** A `remember_this(fact)` tool is a decision
+  the model makes *while* answering — by then it has already concluded it does
+  not know the customer's name. `MessageAddedEvent` fires before the model
+  sees the message at all, so the context is simply there. And a model that
+  forgets to call `remember_this` produces an agent that silently stops
+  learning; the `AfterInvocationEvent` hook fires regardless.
+- **The refund amount is looked up, never inferred.** The planner calls
+  `get_order` before `initiate_refund` specifically so the number comes from
+  the order record. A test asserts the ordering, because this is the failure
+  that would be invisible in a transcript that otherwise looks fine.
+- **Tool results are quoted, not paraphrased.** Especially for RAG —
+  paraphrasing lets a retrieval miss hide behind confident prose.
+- **The degraded path says it is degraded.** When the Code Interpreter is
+  unavailable the fallback computes the tier discount only and returns
+  `"fallback": true`. It deliberately does not try to redeem points without
+  the sandbox.
+- **Two integration styles, one namespace.** The Gateway flattens an API
+  Gateway proxy target and a direct Lambda target into the same
+  `TargetName___toolName` space. Collisions there are silent — `get_customer`
+  is a prefix of `get_customer_orders`, which cost me a debugging session.
+
+---
+
+## What's in here
+
+```
+project/starter/
+  main.py                  ★ the deliverable — all 8 TODO sections implemented
+  main.py.starter            the original starter file, for diffing against main.py
+  product_catalog.txt        Knowledge Base source
+  lambda/                    deployed as-is: order_tracker, refund_processor, lambda_schema
+
+harness/                   ★ offline stand-ins for the AgentCore + Strands SDKs
+  fakes.py                   registers the stand-ins in sys.modules
+  gateway.py                 MCP tools over the REAL Lambda handlers
+  kb_index.py                retrieval over the real catalog
+  memory_store.py            file-backed memory, so two processes share it
+  scripted_model.py          the rule-based planner — read this one sceptically
+
+scripts/
+  run_scenarios.py         ★ runs the six project tests, writes transcripts
+  render_screenshots.py      typesets transcripts as PNGs
+
+tests/                     ★ 87 offline tests
+  test_agent_structure.py    entrypoint contract, no placeholders left
+  test_knowledge_base_tool.py
+  test_memory_hook.py        namespaces, both callbacks, cross-session recall
+  test_loyalty_discount.py   12 arithmetic cases, worked by hand
+  test_gateway_and_browser.py
+  test_scenarios_end_to_end.py
+
+docs/
+  ARCHITECTURE.md            how the pieces fit, and why
+  RUNBOOK.md                 offline and live, with troubleshooting
+  TESTING.md                 what the tests prove — and what they do not
+  SECURITY.md                the NONE authorizer, credentials, code injection
+
+cloudshell/run-all.sh        deploys the AWS infrastructure
+evidence/run-01/             transcripts, screenshots, traces, memory state
+REFLECTION.md                the 200–400 word reflection
+SUBMISSION.md                every rubric line, mapped to code and evidence
+```
+
+★ = written for this project. Everything else is the Udacity starter,
+unchanged, so the graded files stay byte-identical to what the course ships.
+
+---
+
+## Credits
+
+Starter code and project specification: [Udacity
+`cd14763-project-starter`](https://github.com/udacity/cd14763-project-starter).
+`project/starter/lambda/` and `product_catalog.txt` are unmodified from it.
