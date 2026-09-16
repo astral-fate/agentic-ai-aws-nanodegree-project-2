@@ -60,6 +60,11 @@ REFUSE
 fi
 
 # ── Configuration ────────────────────────────────────────────────────────────
+# Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
+# the banner prints it, so an uploaded copy can never be confused with an older
+# one sitting in the same directory — which has already happened once.
+SCRIPT_VERSION="v3"
+
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
 AGENT_NAME="${AGENT_NAME:-customer_support_agent}"
@@ -525,29 +530,7 @@ ensure_collection() {
   principals="$(printf '"%s","%s"' "$indexer" "$kb_role")"
   [[ "$caller" != *":root" ]] && principals="${principals},\"${caller}\""
 
-  local data_policy
-  data_policy="[{\"Rules\":[{\"ResourceType\":\"index\",\"Resource\":[\"index/${COLLECTION}/*\"],\"Permission\":[\"aoss:*\"]},{\"ResourceType\":\"collection\",\"Resource\":[\"collection/${COLLECTION}\"],\"Permission\":[\"aoss:*\"]}],\"Principal\":[${principals}]}]"
-
-  if aws opensearchserverless create-access-policy --name "${COLLECTION}-data" --type data \
-       --policy "$data_policy" --region "$REGION" >/dev/null 2>&1; then
-    ok "data access policy"
-  else
-    # Already exists — rewrite it, because a policy created on an earlier run
-    # may name the wrong principals. update-access-policy needs the current
-    # version, so read it first.
-    local version
-    version="$(aws opensearchserverless get-access-policy --name "${COLLECTION}-data" \
-      --type data --region "$REGION" --query 'accessPolicyDetail.policyVersion' \
-      --output text 2>/dev/null)"
-    if [[ -n "$version" && "$version" != "None" ]] && \
-       aws opensearchserverless update-access-policy --name "${COLLECTION}-data" \
-         --type data --policy-version "$version" --policy "$data_policy" \
-         --region "$REGION" >/dev/null 2>&1; then
-      ok "data access policy updated"
-    else
-      skip "data access policy exists"
-    fi
-  fi
+  sync_data_access_policy "$indexer" "$principals" || return 1
 
   local arn
   arn="$(aws opensearchserverless batch-get-collection --names "$COLLECTION" --region "$REGION" \
@@ -575,6 +558,64 @@ ensure_collection() {
 
   create_vector_index "$endpoint"
   record "OpenSearch Serverless" "OK" "$COLLECTION (BILLING — tear down when done)"
+}
+
+# Write the data access policy, then prove it took.
+#
+# The previous version created-or-updated and moved on. When the update failed
+# — which it does, silently, if the policy version is stale — the collection
+# kept an older policy naming a principal that no longer signs anything, and
+# the only symptom was a bare 403 five minutes later at index creation. So
+# this reads the policy back and refuses to continue unless the principal that
+# will actually sign the request is in it.
+sync_data_access_policy() {
+  local indexer="$1" principals="$2"
+  local name="${COLLECTION}-data" policy out version
+
+  policy="[{\"Rules\":[{\"ResourceType\":\"index\",\"Resource\":[\"index/${COLLECTION}/*\"],\"Permission\":[\"aoss:*\"]},{\"ResourceType\":\"collection\",\"Resource\":[\"collection/${COLLECTION}\"],\"Permission\":[\"aoss:*\"]}],\"Principal\":[${principals}]}]"
+
+  out="$(aws opensearchserverless create-access-policy --name "$name" --type data \
+    --policy "$policy" --region "$REGION" 2>&1)"
+
+  if grep -q '"name"' <<<"$out"; then
+    ok "data access policy created"
+  else
+    version="$(aws opensearchserverless get-access-policy --name "$name" --type data \
+      --region "$REGION" --query 'accessPolicyDetail.policyVersion' --output text 2>/dev/null)"
+
+    if [[ -z "$version" || "$version" == "None" ]]; then
+      bad "could not read the data access policy version: $(head -c 200 <<<"$out")"
+      return 1
+    fi
+
+    out="$(aws opensearchserverless update-access-policy --name "$name" --type data \
+      --policy-version "$version" --policy "$policy" --region "$REGION" 2>&1)"
+    if grep -q '"name"' <<<"$out"; then
+      ok "data access policy updated (was version $version)"
+    else
+      bad "could not update the data access policy: $(head -c 240 <<<"$out")"
+      return 1
+    fi
+  fi
+
+  # Read back and confirm the signing principal is really there.
+  local current
+  current="$(aws opensearchserverless get-access-policy --name "$name" --type data \
+    --region "$REGION" --output json 2>/dev/null)"
+
+  if grep -qF "$indexer" <<<"$current"; then
+    ok "policy names $indexer"
+  else
+    bad "the data access policy does not name $indexer — index creation would 403"
+    printf '       current principals: %s\n' \
+      "$(jq -r '[.accessPolicyDetail.policy[].Principal[]] | join(", ")' <<<"$current" 2>/dev/null)"
+    return 1
+  fi
+
+  # A policy change is not effective the instant the API returns.
+  printf '   %s⋯%s waiting 30s for the policy to take effect ' "$DIM" "$RESET"
+  sleep 30
+  printf '%s✓%s\n' "$GREEN" "$RESET"
 }
 
 # An identity that exists purely to create the vector index.
@@ -977,34 +1018,59 @@ PYEOF
   fi
   ok "exported OpenAPI spec, operations: $ops"
 
-  # Two shapes are attempted because the inline payload has a size limit and
-  # the S3 form is the documented route for anything larger. Both errors are
-  # printed if both fail, so the next attempt is informed.
-  local out
+  # An openApiSchema target rejects the bare GATEWAY_IAM_ROLE that a Lambda
+  # target accepts: "IamCredentialProvider is required for openApiSchema
+  # targets using IAM authentication". So the provider carries the gateway
+  # role explicitly.
+  local gw_role creds out bucket
+  gw_role="$(load gw_role_arn)"
+  creds="[{\"credentialProviderType\":\"GATEWAY_IAM_ROLE\",\"credentialProvider\":{\"iamCredentialProvider\":{\"roleArn\":\"${gw_role}\"}}}]"
+
   out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
     --name "$ORDER_FN" \
     --target-configuration "{\"mcp\":{\"openApiSchema\":{\"inlinePayload\":$(jq -Rs . < /tmp/openapi-final.json)}}}" \
-    --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
+    --credential-provider-configurations "$creds" \
     --region "$REGION" 2>&1)"
   if grep -q '"targetId"' <<<"$out"; then
     ok "target: order-tracker (OpenAPI, inline)"; return 0
   fi
-  warn "inline OpenAPI target failed: $(head -c 200 <<<"$out")"
+  warn "inline OpenAPI target failed: $(head -c 240 <<<"$out")"
 
-  local bucket; bucket="$(load bucket)"
+  # The inline payload has a size limit; S3 is the documented route above it.
+  bucket="$(load bucket)"
   aws s3 cp /tmp/openapi-final.json "s3://${bucket}/openapi.json" --region "$REGION" >/dev/null 2>&1
   out="$(aws bedrock-agentcore-control create-gateway-target --gateway-identifier "$gw" \
     --name "$ORDER_FN" \
-    --target-configuration "{\"mcp\":{\"openApiSchema\":{\"s3\":{\"uri\":\"s3://${bucket}/openapi.json\"}}}}" \
-    --credential-provider-configurations '[{"credentialProviderType":"GATEWAY_IAM_ROLE"}]' \
+    --target-configuration "{\"mcp\":{\"openApiSchema\":{\"s3\":{\"uri\":\"s3://${bucket}/openapi.json\",\"bucketOwnerAccountId\":\"$(load account)\"}}}}" \
+    --credential-provider-configurations "$creds" \
     --region "$REGION" 2>&1)"
   if grep -q '"targetId"' <<<"$out"; then
     ok "target: order-tracker (OpenAPI, from S3)"; return 0
   fi
-  warn "S3 OpenAPI target failed: $(head -c 200 <<<"$out")"
+  warn "S3 OpenAPI target failed: $(head -c 240 <<<"$out")"
 
+  print_target_schema
   console_steps_api_target
   return 1
+}
+
+# Print the CLI's own expected input shape for a gateway target.
+#
+# These shapes are not something to keep guessing at from error messages —
+# the CLI model knows them exactly, so ask it. Printed only on failure, and
+# it is the thing to paste when reporting one.
+print_target_schema() {
+  local skeleton
+  skeleton="$(aws bedrock-agentcore-control create-gateway-target \
+    --generate-cli-skeleton input --region "$REGION" 2>/dev/null)"
+  [[ -z "$skeleton" ]] && return 0
+
+  printf '\n   %sThe CLI expects these shapes:%s\n' "$BOLD" "$RESET"
+  printf '     credentialProviderConfigurations:\n'
+  jq -c '.credentialProviderConfigurations' <<<"$skeleton" 2>/dev/null | sed 's/^/       /'
+  printf '     targetConfiguration:\n'
+  jq -c '.targetConfiguration' <<<"$skeleton" 2>/dev/null | sed 's/^/       /'
+  printf '\n'
 }
 
 console_steps_api_target() {
@@ -1301,7 +1367,8 @@ main() {
     --test-only) preflight; materialise; run_tests; summary; exit 0 ;;
   esac
 
-  printf '%s\n' "${BOLD}Customer Support Agent — end-to-end deploy${RESET}"
+  printf '%s\n' "${BOLD}Customer Support Agent — end-to-end deploy ${SCRIPT_VERSION}${RESET}"
+  printf '%s\n' "${DIM}running: $0${RESET}"
   printf '%s\n' "${DIM}region $REGION · prefix $PREFIX · state $STATE_DIR${RESET}"
   printf '%s\n' "${YELLOW}OpenSearch Serverless bills hourly once created. --teardown when done.${RESET}"
 

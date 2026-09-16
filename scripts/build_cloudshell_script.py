@@ -6,7 +6,7 @@ Build the self-contained CloudShell deploy script.
 Reads `cloudshell/_deploy-e2e.template.sh` and replaces the
 `__EMBEDDED_FILES__` marker with quoted heredocs carrying the real contents of
 every file the agent needs — `main.py`, both Lambda handlers, the tool schema
-and the product catalog. The result, `cloudshell/deploy-e2e.sh`, needs no
+and the product catalog. The result, `cloudshell/deploy-e2e-v3.sh`, needs no
 clone and no network beyond AWS itself.
 
 Generating it rather than maintaining it by hand is the point: the embedded
@@ -21,14 +21,38 @@ build loudly instead of producing a script that silently truncates.
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = ROOT / "cloudshell" / "_deploy-e2e.template.sh"
-OUTPUT = ROOT / "cloudshell" / "deploy-e2e.sh"
 MARKER = "__EMBEDDED_FILES__"
+
+
+def version() -> str:
+    """Read SCRIPT_VERSION out of the template — it is the single source."""
+    match = re.search(
+        r'^SCRIPT_VERSION="([^"]+)"', TEMPLATE.read_text(encoding="utf-8"), re.M
+    )
+    if not match:
+        raise SystemExit("FATAL: SCRIPT_VERSION not found in the template")
+    return match.group(1)
+
+
+def output_path() -> Path:
+    """
+    Versioned filename, e.g. deploy-e2e-v3.sh.
+
+    The version is in the name because the script is uploaded to CloudShell by
+    hand as well as curl'd. Two files differing only by content, sitting in the
+    same directory, is how a stale copy got run once already.
+    """
+    return ROOT / "cloudshell" / f"deploy-e2e-{version()}.sh"
+
+
+OUTPUT = output_path()
 
 # (source path, path inside $PROJECT_DIR, heredoc sentinel)
 FILES: List[Tuple[str, str, str]] = [
@@ -90,7 +114,8 @@ def main() -> int:
 
     lines = script.count("\n")
     size_kb = len(script.encode("utf-8")) / 1024
-    print(f"wrote {OUTPUT.relative_to(ROOT)}  ({lines:,} lines, {size_kb:.0f} KB)")
+    print(f"wrote {OUTPUT.relative_to(ROOT).as_posix()}  "
+          f"({lines:,} lines, {size_kb:.0f} KB, version {version()})")
     print("embedded:")
     for source_rel, dest, _ in FILES:
         n = (ROOT / source_rel).read_text(encoding="utf-8").count("\n")

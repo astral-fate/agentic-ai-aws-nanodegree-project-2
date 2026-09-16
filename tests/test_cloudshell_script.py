@@ -1,7 +1,7 @@
 """
 Guards on the self-contained CloudShell script.
 
-`cloudshell/deploy-e2e.sh` carries a copy of every project file inside it. A
+`cloudshell/deploy-e2e-v3.sh` carries a copy of every project file inside it. A
 copy is a chance to drift, and a stale `main.py` embedded in a deploy script is
 the kind of bug that only shows up after you have paid for an OpenSearch
 collection. These tests fail the build if the committed script does not match
@@ -31,7 +31,7 @@ def test_committed_script_matches_the_current_sources():
     expected = build()
     actual = OUTPUT.read_text(encoding="utf-8")
     assert actual == expected, (
-        "cloudshell/deploy-e2e.sh is stale — a source file changed since it was "
+        "cloudshell/deploy-e2e-v3.sh is stale — a source file changed since it was "
         "built. Run: python -m scripts.build_cloudshell_script"
     )
 
@@ -39,7 +39,7 @@ def test_committed_script_matches_the_current_sources():
 def test_script_has_unix_line_endings():
     """CloudShell is bash; a trailing CR makes every line a 'command not found'."""
     raw = OUTPUT.read_bytes()
-    assert b"\r\n" not in raw, "deploy-e2e.sh must use LF endings"
+    assert b"\r\n" not in raw, "the generated script must use LF endings"
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
