@@ -64,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v12"
+SCRIPT_VERSION="v13"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -1349,11 +1349,36 @@ EOF
 
   # The deprecation banner is suppressed so it cannot crowd the real error out
   # of the log tail — which is exactly what happened on the previous run.
+  # --auto-update-on-conflict, because this script is meant to be re-run.
+  #
+  # Without it, a second deploy fails with ConflictException ("Agent already
+  # exists"), CreateAgentRuntime never returns an ARN, nothing gets recorded
+  # locally, and every subsequent invoke reports "Agent not deployed" — a
+  # confusing way to say "the agent is deployed, but this CLI does not know
+  # where". The toolkit names the flag in that error; it is used here rather
+  # than guessed.
+  local update_flag=""
+  grep -q -- "--auto-update-on-conflict" /tmp/agentcore-help.log 2>/dev/null \
+    && update_flag="--auto-update-on-conflict"
+  [[ -z "$update_flag" ]] && \
+    ( cd "$PROJECT_DIR" && agentcore "$deploy_cmd" --help ) 2>&1 \
+      | grep -q -- "--auto-update-on-conflict" && update_flag="--auto-update-on-conflict"
+
   # The variable goes on agentcore, not on yes — a prefix assignment applies
   # to the command it precedes, and that is the left side of the pipe.
   ( cd "$PROJECT_DIR" && source .env \
-      && yes '' | AGENTCORE_SUPPRESS_RECOMMENDATION=1 agentcore "$deploy_cmd" \
+      && yes '' | AGENTCORE_SUPPRESS_RECOMMENDATION=1 \
+         agentcore "$deploy_cmd" $update_flag \
       >/tmp/deploy.log 2>&1 ) || true
+
+  # If it conflicted anyway, retry once with the flag the error names.
+  if grep -q "ConflictException" /tmp/deploy.log && [[ -z "$update_flag" ]]; then
+    warn "agent already exists — retrying with --auto-update-on-conflict"
+    ( cd "$PROJECT_DIR" && source .env \
+        && yes '' | AGENTCORE_SUPPRESS_RECOMMENDATION=1 \
+           agentcore "$deploy_cmd" --auto-update-on-conflict \
+        >/tmp/deploy.log 2>&1 ) || true
+  fi
 
   printf '%s·%s\n' "$DIM" "$RESET"
 
