@@ -64,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v9"
+SCRIPT_VERSION="v10"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -1321,15 +1321,43 @@ EOF
     return 1
   fi
 
-  printf '   %s⋯%s agentcore deploy (this takes several minutes) ' "$DIM" "$RESET"
-  if ( cd "$PROJECT_DIR" && source .env && yes '' | agentcore deploy >/tmp/deploy.log 2>&1 ); then
+  # The toolkit has renamed this command across versions — older releases
+  # expose `launch`, newer ones `deploy`. Read the actual command list rather
+  # than assuming either.
+  local deploy_cmd=""
+  ( cd "$PROJECT_DIR" && agentcore --help ) >/tmp/agentcore-help.log 2>&1 || true
+  if grep -qE '^\s+deploy\b' /tmp/agentcore-help.log; then
+    deploy_cmd="deploy"
+  elif grep -qE '^\s+launch\b' /tmp/agentcore-help.log; then
+    deploy_cmd="launch"
+  fi
+
+  if [[ -z "$deploy_cmd" ]]; then
+    bad "neither 'deploy' nor 'launch' is in this toolkit's command list:"
+    grep -E '^\s+[a-z-]+' /tmp/agentcore-help.log | head -15 | sed 's/^/       /'
+    record "Agent deploy" "FAILED" "no deploy command found"
+    return 1
+  fi
+
+  printf '   %s⋯%s agentcore %s (this takes several minutes) ' "$DIM" "$RESET" "$deploy_cmd"
+
+  # The deprecation banner is suppressed so it cannot crowd the real error out
+  # of the log tail — which is exactly what happened on the previous run.
+  # The variable goes on agentcore, not on yes — a prefix assignment applies
+  # to the command it precedes, and that is the left side of the pipe.
+  ( cd "$PROJECT_DIR" && source .env \
+      && yes '' | AGENTCORE_SUPPRESS_RECOMMENDATION=1 agentcore "$deploy_cmd" \
+      >/tmp/deploy.log 2>&1 ) || true
+
+  if grep -qiE 'agent (arn|endpoint)|deployment (complete|succeeded)|READY' /tmp/deploy.log; then
     printf '%s✓%s\n' "$GREEN" "$RESET"
     save agent_deployed 1
+    save deploy_cmd "$deploy_cmd"
     record "Agent deploy" "OK" "$AGENT_NAME"
   else
     printf '%s✗%s\n' "$RED" "$RESET"
-    warn "deploy failed — last lines of /tmp/deploy.log:"
-    tail -12 /tmp/deploy.log | sed 's/^/       /'
+    bad "agentcore $deploy_cmd did not report success. Full log:"
+    sed 's/^/       /' /tmp/deploy.log | tail -40
     record "Agent deploy" "FAILED" "see /tmp/deploy.log"
     return 1
   fi
@@ -1369,7 +1397,7 @@ run_tests() {
     payload="$(jq -nc --arg p "$prompt" --arg s "$session" \
       '{prompt:$p, customer_id:"CUST-123", session_id:$s}')"
 
-    out="$( cd "$PROJECT_DIR" && source .env && agentcore invoke "$payload" 2>&1 )"
+    out="$( cd "$PROJECT_DIR" && source .env && AGENTCORE_SUPPRESS_RECOMMENDATION=1 agentcore invoke "$payload" 2>&1 )"
 
     {
       printf '%s\n' "===================================================================="
