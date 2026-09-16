@@ -34,3 +34,7 @@ Thumbs.db
 
 # oh-my-claudecode session state
 .omc/
+
+# Downloaded/extracted submission bundles — contain live resource IDs
+cs-agent-submission/
+cs-agent-submission.zip
