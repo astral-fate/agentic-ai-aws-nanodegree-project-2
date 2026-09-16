@@ -64,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v11"
+SCRIPT_VERSION="v12"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -2321,18 +2321,34 @@ EOF
       && yes '' | AGENTCORE_SUPPRESS_RECOMMENDATION=1 agentcore "$deploy_cmd" \
       >/tmp/deploy.log 2>&1 ) || true
 
-  if grep -qiE 'agent (arn|endpoint)|deployment (complete|succeeded)|READY' /tmp/deploy.log; then
-    printf '%s✓%s\n' "$GREEN" "$RESET"
-    save agent_deployed 1
-    save deploy_cmd "$deploy_cmd"
-    record "Agent deploy" "OK" "$AGENT_NAME"
-  else
-    printf '%s✗%s\n' "$RED" "$RESET"
-    bad "agentcore $deploy_cmd did not report success. Full log:"
-    sed 's/^/       /' /tmp/deploy.log | tail -40
-    record "Agent deploy" "FAILED" "see /tmp/deploy.log"
+  printf '%s·%s\n' "$DIM" "$RESET"
+
+  # Verified by probing the agent, not by grepping the deploy log.
+  #
+  # The previous version matched /READY/i, which matches inside the word
+  # "already" — so a log saying the agent was already configured was read as a
+  # successful deployment, and the run reported "Agent deploy OK" while every
+  # subsequent invoke returned "Agent not deployed". A false success is worse
+  # than a failure: it sent seven test transcripts out looking like the model
+  # had misbehaved.
+  local probe
+  probe="$( cd "$PROJECT_DIR" && source .env \
+    && AGENTCORE_SUPPRESS_RECOMMENDATION=1 agentcore invoke \
+       '{"prompt":"ping","customer_id":"CUST-000","session_id":"probe"}' 2>&1 )"
+
+  if grep -qiE 'not deployed|information unavailable|no such|not found' <<<"$probe"; then
+    bad "the agent is not answering after $deploy_cmd:"
+    sed 's/^/       /' <<<"$probe" | head -8
+    printf '\n       %sFull %s log:%s\n' "$BOLD" "$deploy_cmd" "$RESET"
+    sed 's/^/       /' /tmp/deploy.log | tail -45
+    record "Agent deploy" "FAILED" "agent not reachable — see /tmp/deploy.log"
     return 1
   fi
+
+  ok "agent is answering invokes"
+  save agent_deployed 1
+  save deploy_cmd "$deploy_cmd"
+  record "Agent deploy" "OK" "$AGENT_NAME"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -2382,6 +2398,16 @@ run_tests() {
       printf '\n--------------------------------------------------------------------\n'
       printf 'Expected to contain: %s\n' "$expected"
     } > "$EVIDENCE_DIR/${id}.txt"
+
+    # An undeployed agent is not a failed scenario, and labelling it one is
+    # how seven transcripts ended up looking like model misbehaviour.
+    if grep -qiE 'not deployed|information unavailable' <<<"$out"; then
+      printf 'RESULT: [ERROR] the agent is not deployed — this is not a test result
+'         >> "$EVIDENCE_DIR/${id}.txt"
+      bad "$id — agent not deployed; stopping"
+      record "Six scenarios" "FAILED" "agent not deployed"
+      return 1
+    fi
 
     missing=""
     IFS=',' read -ra needles <<<"$expected"
