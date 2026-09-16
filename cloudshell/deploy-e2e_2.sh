@@ -42,23 +42,6 @@
 
 set -uo pipefail
 
-# This file is a TEMPLATE, not the deliverable. The embedded project files are
-# substituted in by scripts/build_cloudshell_script.py, which writes
-# cloudshell/deploy-e2e.sh. Running the template directly writes no project
-# files, and then silently reuses whatever happens to be on disk — so refuse.
-if grep -q '^__EMBEDDED''_FILES__$' "${BASH_SOURCE[0]}" 2>/dev/null; then
-  cat >&2 <<'REFUSE'
-This is the template, not the runnable script.
-
-  Run the generated one instead:
-
-    curl -sSL https://raw.githubusercontent.com/astral-fate/agentic-ai-aws-nanodegree-project-2/main/cloudshell/deploy-e2e.sh -o deploy-e2e.sh
-    bash deploy-e2e.sh
-
-REFUSE
-  exit 2
-fi
-
 # ── Configuration ────────────────────────────────────────────────────────────
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -1445,8 +1428,7 @@ ensure_bucket() {
   local bucket; bucket="$(load bucket)"
   [[ -z "$bucket" ]] && { bucket="${PREFIX}-kb-$(load account)"; save bucket "$bucket"; }
 
-  # stdout redirected too: recent CLI versions print a JSON body on success.
-  if aws s3api head-bucket --bucket "$bucket" >/dev/null 2>&1; then
+  if aws s3api head-bucket --bucket "$bucket" 2>/dev/null; then
     skip "s3://$bucket exists"
   else
     if [[ "$REGION" == "us-east-1" ]]; then
@@ -1472,7 +1454,7 @@ ensure_collection() {
 
   local caller kb_role indexer
   caller="$(load caller_arn)"; kb_role="$(load kb_role_arn)"
-  indexer="$(ensure_indexer_user)"
+  indexer="$(ensure_indexer_role)"
 
   # Three policies must exist before the collection, or creation fails.
   aws opensearchserverless create-security-policy --name "${COLLECTION}-enc" --type encryption \
@@ -1543,45 +1525,34 @@ ensure_collection() {
   record "OpenSearch Serverless" "OK" "$COLLECTION (BILLING — tear down when done)"
 }
 
-# An identity that exists purely to create the vector index.
+# A role that exists purely to create the vector index.
 #
-# OpenSearch Serverless matches data-access policies against the *signing*
-# principal, and the account root never matches — a root-signed request gets a
-# bare 403 with no explanation. CloudShell is very often running as root, so
-# the script needs a non-root principal to sign with.
-#
-# It cannot be a role: AWS does not permit the account root user to call
-# sts:AssumeRole at all, so the obvious "mint a role and assume it" approach
-# fails for exactly the identity that needs it. It has to be an IAM user with
-# its own access key. The key is created just before the index request and
-# deleted immediately afterwards by delete_indexer_key, including on failure.
-ensure_indexer_user() {
-  local name="${PREFIX}-indexer" arn
+# OpenSearch Serverless data-access policies are matched against the signing
+# principal, and the account root does not match — a root-signed request gets
+# a bare 403 with no explanation. Since CloudShell is very often running as
+# root, the script mints a role that root can assume, names *that* in the data
+# access policy, and signs the index request with its temporary credentials.
+ensure_indexer_role() {
+  local name="${PREFIX}-indexer" account arn
+  account="$(load account)"
 
-  arn="$(aws iam get-user --user-name "$name" --query User.Arn --output text 2>/dev/null)"
+  arn="$(aws iam get-role --role-name "$name" --query Role.Arn --output text 2>/dev/null)"
   if [[ -z "$arn" || "$arn" == "None" ]]; then
-    arn="$(aws iam create-user --user-name "$name" --query User.Arn --output text 2>/dev/null)"
+    arn="$(aws iam create-role --role-name "$name" \
+      --assume-role-policy-document "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"AWS\":\"arn:aws:iam::${account}:root\"},\"Action\":\"sts:AssumeRole\"}]}" \
+      --query Role.Arn --output text 2>/dev/null)"
     # stdout is redirected, not just stderr: this function's stdout IS the
-    # returned ARN, so anything else printed would be concatenated onto it.
+    # returned ARN, so anything else printed here would be concatenated onto
+    # it and every later use of the role ARN would be silently malformed.
     [[ -n "$arn" && "$arn" != "None" ]] && \
-      aws iam put-user-policy --user-name "$name" --policy-name aoss-index \
+      aws iam put-role-policy --role-name "$name" --policy-name aoss-index \
         --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["aoss:APIAccessAll"],"Resource":"*"}]}' \
         >/dev/null 2>&1
-    sleep 10
+    sleep 12   # IAM propagation, before anything tries to assume it
   fi
 
-  save indexer_user_arn "$arn"
+  save indexer_role_arn "$arn"
   printf '%s' "$arn"
-}
-
-# Remove every access key on the indexer user. Called before minting a new one
-# (IAM allows only two) and again once the index exists.
-delete_indexer_key() {
-  local name="${PREFIX}-indexer" key
-  for key in $(aws iam list-access-keys --user-name "$name" \
-                 --query 'AccessKeyMetadata[].AccessKeyId' --output text 2>/dev/null); do
-    aws iam delete-access-key --user-name "$name" --access-key-id "$key" >/dev/null 2>&1
-  done
 }
 
 # The vector index is created over the OpenSearch REST API, signed with SigV4
@@ -1589,30 +1560,28 @@ delete_indexer_key() {
 # botocore ships with CloudShell, so there is no pip install to fail.
 create_vector_index() {
   local endpoint="$1"
-  local keys access secret status
+  local indexer; indexer="$(load indexer_role_arn)"
 
-  delete_indexer_key
-  keys="$(aws iam create-access-key --user-name "${PREFIX}-indexer" \
-    --query AccessKey --output json 2>/dev/null)"
+  # Assume the indexer role. If that fails, fall back to the ambient
+  # credentials — which works whenever the caller is not root.
+  local creds access secret token
+  creds="$(aws sts assume-role --role-arn "$indexer" \
+    --role-session-name "${PREFIX}-index" --duration-seconds 3600 \
+    --query Credentials --output json 2>/dev/null)"
 
-  if [[ -z "$keys" || "$keys" == "None" ]]; then
-    bad "could not create an access key for ${PREFIX}-indexer"
-    return 1
+  if [[ -n "$creds" && "$creds" != "None" ]]; then
+    access="$(jq -r .AccessKeyId <<<"$creds")"
+    secret="$(jq -r .SecretAccessKey <<<"$creds")"
+    token="$(jq -r .SessionToken <<<"$creds")"
+    ok "assumed ${PREFIX}-indexer for index creation"
+  else
+    warn "could not assume the indexer role — using ambient credentials"
+    access=""; secret=""; token=""
   fi
-  access="$(jq -r .AccessKeyId <<<"$keys")"
-  secret="$(jq -r .SecretAccessKey <<<"$keys")"
-  ok "minted a temporary key for ${PREFIX}-indexer"
 
-  # A brand-new access key is not usable for a few seconds, and the data
-  # access policy needs to propagate too. Both show up as the same 403.
-  sleep 20
-
-  # AWS_SESSION_TOKEN is cleared explicitly: CloudShell exports one for the
-  # ambient identity, and leaving it set would make botocore send it alongside
-  # the new long-lived key, which fails signature validation.
-  AWS_ACCESS_KEY_ID="$access" \
-  AWS_SECRET_ACCESS_KEY="$secret" \
-  AWS_SESSION_TOKEN="" \
+  AWS_ACCESS_KEY_ID="${access:-${AWS_ACCESS_KEY_ID:-}}" \
+  AWS_SECRET_ACCESS_KEY="${secret:-${AWS_SECRET_ACCESS_KEY:-}}" \
+  AWS_SESSION_TOKEN="${token:-${AWS_SESSION_TOKEN:-}}" \
   python3 - "$endpoint" "$INDEX_NAME" "$VECTOR_FIELD" "$EMBED_DIM" "$REGION" <<'PYEOF'
 import json, sys, time
 import botocore.session
@@ -1680,17 +1649,9 @@ for attempt in range(1, ATTEMPTS + 1):
     print(f"   ! vector index creation returned {response.status_code}: {text[:300]}")
     if response.status_code == 403:
         print("     The signing principal is not in the collection's data access")
-        print("     policy. Check that the policy names the indexer user.")
+        print("     policy. Check that the policy names the indexer role.")
     sys.exit(1)
 PYEOF
-  status=$?
-
-  # Delete the key whether the index succeeded or not: it is a long-lived
-  # credential and it has no further use.
-  delete_indexer_key
-  ok "revoked the temporary indexer key"
-
-  return $status
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1913,28 +1874,17 @@ create_openapi_target() {
   fi
 
   # The export has no `servers` block, so the Gateway would not know where to
-  # send the call. Add it, and confirm the three operationIds survived — they
-  # are what become the MCP tool names.
-  #
-  # The operation list is written to a file by python rather than returned on
-  # a stream: a redirect placed after an assignment applies to the assignment,
-  # not to the command substitution inside it, so the earlier version sent the
-  # list to the terminal and then reported it as missing.
-  python3 - "$url" <<'PYEOF'
+  # send the call. Add it, and confirm the three operationIds survived.
+  spec="$(python3 - "$url" <<'PYEOF'
 import json, sys
-
 spec = json.load(open("/tmp/openapi.json"))
 spec["servers"] = [{"url": sys.argv[1]}]
-
-ops = [op.get("operationId")
-       for path in spec.get("paths", {}).values()
+ops = [op.get("operationId") for path in spec.get("paths", {}).values()
        for op in path.values() if isinstance(op, dict)]
-
-with open("/tmp/openapi-final.json", "w") as fh:
-    json.dump(spec, fh)
-with open("/tmp/ops.txt", "w") as fh:
-    fh.write(",".join(o for o in ops if o))
+print(json.dumps(spec), file=open("/tmp/openapi-final.json", "w"))
+print(",".join(o for o in ops if o), file=sys.stderr)
 PYEOF
+)" 2>/tmp/ops.txt
 
   local ops; ops="$(cat /tmp/ops.txt 2>/dev/null)"
   if [[ -z "$ops" ]]; then
@@ -2182,7 +2132,7 @@ EOF
 show_status() {
   printf '\n%sRecorded state%s\n\n' "$BOLD" "$RESET"
   local key
-  for key in account caller_arn lambda_role_arn kb_role_arn gw_role_arn indexer_user_arn \
+  for key in account caller_arn lambda_role_arn kb_role_arn gw_role_arn indexer_role_arn \
              "${ORDER_FN}_arn" "${REFUND_FN}_arn" api_id api_url bucket \
              collection_arn collection_endpoint kb_id ds_id memory_id \
              gateway_id gateway_url agent_deployed; do
@@ -2246,11 +2196,8 @@ teardown() {
     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole >/dev/null 2>&1
   aws iam delete-role-policy --role-name "$KB_ROLE" --policy-name kb-access >/dev/null 2>&1
   aws iam delete-role-policy --role-name "$GW_ROLE" --policy-name gateway-invoke >/dev/null 2>&1
-  delete_indexer_key
-  aws iam delete-user-policy --user-name "${PREFIX}-indexer" --policy-name aoss-index >/dev/null 2>&1
-  aws iam delete-user --user-name "${PREFIX}-indexer" >/dev/null 2>&1 \
-    && ok "${PREFIX}-indexer user deleted"
-  for role in "$LAMBDA_ROLE" "$KB_ROLE" "$GW_ROLE"; do
+  aws iam delete-role-policy --role-name "${PREFIX}-indexer" --policy-name aoss-index >/dev/null 2>&1
+  for role in "$LAMBDA_ROLE" "$KB_ROLE" "$GW_ROLE" "${PREFIX}-indexer"; do
     aws iam delete-role --role-name "$role" >/dev/null 2>&1 && ok "$role deleted"
   done
 
