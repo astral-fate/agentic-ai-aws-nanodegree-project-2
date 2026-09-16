@@ -63,7 +63,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v5"
+SCRIPT_VERSION="v6"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -719,7 +719,11 @@ body = json.dumps({
         vector_field: {
             "type": "knn_vector",
             "dimension": int(dim),
-            "method": {"name": "hnsw", "engine": "faiss", "spaceType": "l2"},
+            # space_type, not spaceType. The index mapping is the OpenSearch
+            # API, which is snake_case throughout — it is not an AWS API and
+            # does not follow AWS naming. The camelCase spelling is rejected
+            # with "mapper_parsing_exception: Invalid parameter: spaceType".
+            "method": {"name": "hnsw", "engine": "faiss", "space_type": "l2"},
         },
         "AMAZON_BEDROCK_TEXT_CHUNK": {"type": "text"},
         "AMAZON_BEDROCK_METADATA": {"type": "text", "index": False},
