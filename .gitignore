@@ -38,3 +38,7 @@ Thumbs.db
 # Downloaded/extracted submission bundles — contain live resource IDs
 cs-agent-submission/
 cs-agent-submission.zip
+
+# Chrome profile used by scripts/capture_console.py — holds a console session
+.aws-console-profile/
+.evidence-capture-key.json
