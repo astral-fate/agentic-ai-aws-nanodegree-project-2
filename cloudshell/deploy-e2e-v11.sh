@@ -64,7 +64,7 @@ fi
 # Bumped on every fix. The generated file is named deploy-e2e-<version>.sh and
 # the banner prints it, so an uploaded copy can never be confused with an older
 # one sitting in the same directory — which has already happened once.
-SCRIPT_VERSION="v10"
+SCRIPT_VERSION="v11"
 
 REGION="${AWS_REGION:-us-east-1}"
 PREFIX="${PREFIX:-cs-agent}"
@@ -2290,17 +2290,23 @@ EOF
   # The toolkit has renamed this command across versions — older releases
   # expose `launch`, newer ones `deploy`. Read the actual command list rather
   # than assuming either.
+  # Matched as whole words anywhere in the help text. The previous version
+  # anchored on leading whitespace, which finds nothing when the CLI renders
+  # its help in a Rich table — the command names sit behind box-drawing
+  # characters, not spaces — and it then reported "no deploy command found"
+  # while printing an empty list, which is worse than not checking at all.
   local deploy_cmd=""
   ( cd "$PROJECT_DIR" && agentcore --help ) >/tmp/agentcore-help.log 2>&1 || true
-  if grep -qE '^\s+deploy\b' /tmp/agentcore-help.log; then
+
+  if grep -qw "deploy" /tmp/agentcore-help.log; then
     deploy_cmd="deploy"
-  elif grep -qE '^\s+launch\b' /tmp/agentcore-help.log; then
+  elif grep -qw "launch" /tmp/agentcore-help.log; then
     deploy_cmd="launch"
   fi
 
   if [[ -z "$deploy_cmd" ]]; then
-    bad "neither 'deploy' nor 'launch' is in this toolkit's command list:"
-    grep -E '^\s+[a-z-]+' /tmp/agentcore-help.log | head -15 | sed 's/^/       /'
+    bad "no deploy/launch command found. Full 'agentcore --help':"
+    sed 's/^/       /' /tmp/agentcore-help.log | head -60
     record "Agent deploy" "FAILED" "no deploy command found"
     return 1
   fi
